@@ -80,6 +80,42 @@ describe('config schema', () => {
     expect(configSchema.safeParse({ tables: [byId, users] }).success).toBe(true)
   })
 
+  it('validates email and password reset settings', () => {
+    const withEmail = {
+      appUrl: 'http://localhost:8787',
+      auth: { allowSignup: true },
+      email: { provider: 'log', from: 'noreply@example.com' },
+      tables: [],
+    }
+
+    const parsed = configSchema.parse(withEmail)
+    expect(parsed.auth?.passwordReset).toEqual({
+      enabled: true,
+      tokenTtlSeconds: 1_800,
+      maxRequestsPerHour: 3,
+    })
+
+    // Reset needs a link target.
+    expect(
+      configSchema.safeParse({ ...withEmail, appUrl: undefined, auth: { allowSignup: true } }).success,
+    ).toBe(false)
+    expect(
+      configSchema.safeParse({
+        ...withEmail,
+        appUrl: undefined,
+        auth: { allowSignup: true, passwordReset: { resetUrl: 'https://app.example.com/reset' } },
+      }).success,
+    ).toBe(true)
+
+    // SMTP provider requires settings.
+    expect(
+      configSchema.safeParse({
+        ...withEmail,
+        email: { provider: 'smtp', from: 'noreply@example.com' },
+      }).success,
+    ).toBe(false)
+  })
+
   it('accepts configured indexes and rejects bad ones', () => {
     expect(
       configSchema.safeParse({

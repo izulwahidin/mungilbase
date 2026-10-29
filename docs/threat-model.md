@@ -54,6 +54,8 @@ launch; **out** = deliberately not handled.
 | Stolen refresh token reuse | done | Single-use rotation; replay revokes the whole family inside one transaction |
 | Session fixation | done | Server-issued session ids; clients cannot supply or choose them |
 | Bearer token in URL | done | Tokens accepted only from the `Authorization` header |
+| Password reset token theft | done | 256-bit tokens hashed at rest, single-use, 30 min default TTL, replaced on re-request, reset revokes all sessions |
+| Reset link leaking through logs | done | The `log` email provider is refused when `NODE_ENV=production` |
 
 ### Tampering
 
@@ -79,7 +81,8 @@ launch; **out** = deliberately not handled.
 | Threat | Status | Mitigation |
 |---|---|---|
 | Reading another user's rows | done | Rules compile into the `WHERE` clause, executed in SQLite, with a real token as `auth.uid` |
-| Enumeration of accounts | done | Identical `401` for unknown user and wrong password; unknown users still pay a dummy Argon2 verification |
+| Enumeration of accounts | done (login), partial (reset) | Login returns identical `401` and pays a dummy Argon2 verification. Reset returns uniform `202`, but known addresses cost an email send, so timing can differ |
+| Password reset abuse | done | Per-address (3/hour) and per-IP (15/hour) throttles persisted in SQLite |
 | Hashes leaked by a view rule | done | Auth users live in `_mungil_auth_users`, never in a config table; no route returns `password_hash` |
 | Stack traces in responses | done | Generic `internal` error; details go to logs only |
 | Request id injection into logs | done | Supplied ids must match a bounded charset |
@@ -117,8 +120,8 @@ launch; **out** = deliberately not handled.
 
 ## Open questions to resolve before launch
 
-1. Password reset and email verification are not implemented. Until they are,
-   a locked-out user needs the `user:create` CLI or operator access.
+1. Email verification and OAuth are not implemented. Password reset is, when
+   `email` is configured; otherwise a locked-out user needs `user:passwd`.
 2. Is `auth.uid == null` matching rows with `owner_id IS NULL` intended? The
    current compiler says yes (SQLite `IS`). Confirm before shipping rules that
    allow null owners.

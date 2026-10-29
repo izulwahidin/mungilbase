@@ -7,6 +7,7 @@ import { hashPassword, verifyDummyPassword, verifyPassword } from './password.js
 import { createToken, hashToken, isWellFormedToken } from './tokens.js'
 import { AUTH_TABLES, cleanupAuth } from './schema.js'
 import { checkThrottle, clearThrottle } from './throttle.js'
+import type { Mailer } from '../email/mailer.js'
 
 export interface AuthUser {
   id: string
@@ -42,6 +43,18 @@ export interface RequestMeta {
 export interface AuthServiceOptions {
   /** Injectable clock; tests use it to exercise expiry without sleeping. */
   now?: () => Date
+}
+
+export interface PasswordResetRequestOptions {
+  /** Frontend URL that receives `?token=…`. */
+  resetUrl: string
+  ttlSeconds: number
+  maxRequestsPerHour: number
+}
+
+export interface PasswordResetRequestResult {
+  sent: boolean
+  userId: string | null
 }
 
 interface UserRow {
@@ -156,6 +169,145 @@ export class AuthService {
     })
 
     return { id: row.id, email: normalized }
+  }
+
+  /**
+   * Starts a reset. Always resolves the same way for known and unknown
+   * addresses; the caller must not branch on `sent`.
+   *
+   * Tokens are single-use, hashed at rest, and invalidated when replaced.
+   */
+  async requestPasswordReset(
+    email: string,
+    meta: RequestMeta,
+    mailer: Mailer,
+    options: PasswordResetRequestOptions,
+  ): Promise<PasswordResetRequestResult> {
+    const normalized = normalizeEmail(email)
+    const now = this.now()
+
+    checkThrottle(
+      this.db,
+      `reset:${normalized}`,
+      { maxAttempts: options.maxRequestsPerHour, windowSeconds: 3_600 },
+      now.getTime(),
+    )
+    if (meta.ip) {
+      checkThrottle(
+        this.db,
+        `reset-ip:${meta.ip}`,
+        { maxAttempts: options.maxRequestsPerHour * 5, windowSeconds: 3_600 },
+        now.getTime(),
+      )
+    }
+
+    const user = this.db
+      .prepare(`SELECT "id", "email" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .get(normalized) as AuthUser | undefined
+
+    if (!user) return { sent: false, userId: null }
+
+    const token = createToken()
+    const expiresAt = new Date(now.getTime() + options.ttlSeconds * 1000).toISOString()
+
+    transaction(this.db, () => {
+      this.db
+        .prepare(`UPDATE "${AUTH_TABLES.resets}" SET "used_at" = ? WHERE "user_id" = ? AND "used_at" IS NULL`)
+        .run(now.toISOString(), user.id)
+      this.db
+        .prepare(
+          `INSERT INTO "${AUTH_TABLES.resets}" ("token_hash", "user_id", "created_at", "expires_at")
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(hashToken(token), user.id, now.toISOString(), expiresAt)
+    })
+
+    try {
+      await mailer.send({
+        to: user.email,
+        subject: 'Reset your MungilBase password',
+        text:
+          'Someone requested a password reset for this address.\n\n' +
+          `${withToken(options.resetUrl, token)}\n\n` +
+          `This link expires in ${Math.round(options.ttlSeconds / 60)} minutes. ` +
+          'If you did not request it, ignore this email; your password is unchanged.',
+      })
+    } catch (error) {
+      // The API answer stays uniform; the operator sees the failure in logs.
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          event: 'password_reset_email_failed',
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
+    }
+
+    return { sent: true, userId: user.id }
+  }
+
+  async resetPassword(token: string, password: string): Promise<AuthUser> {
+    if (!isWellFormedToken(token)) throw badRequest('Invalid or expired reset token')
+    this.validateNewPassword(password)
+
+    const hashed = hashToken(token)
+    const now = this.now()
+    const row = this.db
+      .prepare(
+        `SELECT r."user_id" AS "userId", r."expires_at" AS "expiresAt",
+                r."used_at" AS "usedAt", u."email" AS "email"
+         FROM "${AUTH_TABLES.resets}" r
+         JOIN "${AUTH_TABLES.users}" u ON u."id" = r."user_id"
+         WHERE r."token_hash" = ?`,
+      )
+      .get(hashed) as
+      | { userId: string; expiresAt: string; usedAt: string | null; email: string }
+      | undefined
+
+    if (!row || row.usedAt !== null || row.expiresAt <= now.toISOString()) {
+      throw badRequest('Invalid or expired reset token')
+    }
+
+    const passwordHash = await hashPassword(password)
+
+    const result = transaction(this.db, (): AuthUser | null => {
+      const consumed = this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.resets}" SET "used_at" = ?
+           WHERE "token_hash" = ? AND "used_at" IS NULL AND "expires_at" > ?`,
+        )
+        .run(now.toISOString(), hashed, now.toISOString()).changes
+
+      if (consumed !== 1) return null
+
+      this.db
+        .prepare(`UPDATE "${AUTH_TABLES.users}" SET "password_hash" = ?, "updated_at" = ? WHERE "id" = ?`)
+        .run(passwordHash, now.toISOString(), row.userId)
+
+      // A reset must not leave an attacker's session alive.
+      this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.sessions}" SET "revoked_at" = ?
+           WHERE "user_id" = ? AND "revoked_at" IS NULL`,
+        )
+        .run(now.toISOString(), row.userId)
+
+      this.db
+        .prepare(
+          `DELETE FROM "${AUTH_TABLES.tokens}"
+           WHERE "session_id" IN (SELECT "id" FROM "${AUTH_TABLES.sessions}" WHERE "user_id" = ?)`,
+        )
+        .run(row.userId)
+
+      this.db
+        .prepare(`UPDATE "${AUTH_TABLES.resets}" SET "used_at" = ? WHERE "user_id" = ? AND "used_at" IS NULL`)
+        .run(now.toISOString(), row.userId)
+
+      return { id: row.userId, email: row.email }
+    })
+
+    if (!result) throw badRequest('Invalid or expired reset token')
+    return result
   }
 
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
@@ -381,6 +533,10 @@ export function normalizeEmail(value: string): string {
     throw badRequest('Enter a valid email address')
   }
   return email
+}
+
+function withToken(url: string, token: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
 }
 
 function isUniqueViolation(error: unknown): boolean {

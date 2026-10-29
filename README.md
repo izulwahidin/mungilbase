@@ -104,6 +104,8 @@ Registered only when the config has an `auth` block.
 | `POST` | `/api/v1/auth/register` | `201` + tokens; `403` unless `allowSignup` |
 | `POST` | `/api/v1/auth/login` | `200` + tokens; uniform `401`; `429` when throttled |
 | `POST` | `/api/v1/auth/refresh` | rotates access **and** refresh tokens |
+| `POST` | `/api/v1/auth/request-password-reset` | `202` always; needs `email` config |
+| `POST` | `/api/v1/auth/reset-password` | consumes a single-use token, revokes sessions |
 | `POST` | `/api/v1/auth/logout` | `204`, revokes the session |
 | `GET` | `/api/v1/auth/me` | current user; `401` without a token |
 
@@ -115,6 +117,12 @@ revokes the entire session family.
 Auth users live in internal `_mungil_*` tables. They are not config tables, so
 a `user_id` column in your schema is a plain text reference to `auth.uid`, not
 a foreign key.
+
+Password reset is enabled only when `email` is configured and `appUrl` or
+`auth.passwordReset.resetUrl` is set. `email.provider` is `log` (development
+only; refuses to start under `NODE_ENV=production`) or `smtp`. Tokens are
+hashed at rest, single-use, 30 minutes by default, and a reset revokes every
+session for the account.
 
 ### Generated API spec
 
@@ -174,6 +182,8 @@ export default {
   database: { file: './data/mungil.db' },
   server: { host: '0.0.0.0', port: 8787, maxConcurrency: 64 },
   auth: { allowSignup: false },       // omit to disable /api/v1/auth entirely
+  // Optional. Enables password reset emails; password comes from MUNGIL_SMTP_PASSWORD.
+  // email: { provider: 'smtp', from: 'noreply@example.com', smtp: { host: 'localhost', user: 'mailer' } },
   tables: [{
     name: 'posts',
     fields: [
@@ -231,6 +241,8 @@ anonymous requests rather than an empty result.
       filtering, sorting, pagination, typed input validation
 - [x] Auth: Argon2id hashing, opaque DB-backed tokens, refresh rotation with
       family revocation, logout, per-account and per-IP login throttling
+- [x] Self-service password reset via SMTP (or a development log provider),
+      with hashed single-use tokens and full session revocation
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`
 - [x] Append-only audit log for denials, throttling, 401s, 5xx and auth events
 - [x] Verified online backups + automated restore drill (runs in CI)
@@ -239,7 +251,7 @@ anonymous requests rather than an empty result.
 ## Not built yet
 
 - Admin UI, file uploads, SDK codegen
-- Password reset, email verification, OAuth
+- Email verification, OAuth
 - Roles beyond `authenticated` (`auth.uid` only)
 
 ## Production gate

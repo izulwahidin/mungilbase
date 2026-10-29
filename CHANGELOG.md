@@ -2,6 +2,18 @@
 
 All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Self-service password reset: `POST /api/v1/auth/request-password-reset` and
+  `POST /api/v1/auth/reset-password`. Hashed, single-use tokens with a 30-minute
+  default TTL; reset revokes every session for the account.
+- `email` config with `smtp` and development `log` providers; the log provider
+  is refused when `NODE_ENV=production`.
+- Per-address and per-IP throttles for reset requests, and audit events
+  `auth.password_reset_requested` / `auth.password_reset`.
+
 ## [0.1.0] — 2026-10-29
 
 First usable release. Single node, SQLite, invite-only by default.

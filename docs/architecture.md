@@ -30,6 +30,7 @@ operate. That is the feature.
 | `src/http/` | Routing, errors, middleware | No SQL strings |
 | `src/auth/` | Argon2id, opaque tokens, sessions, throttling | Owns its internal tables; never interpolates user input into SQL |
 | `src/audit/` | Append-only security events | Never throws; no update/delete path |
+| `src/email/` | SMTP or development log mailer | Provider chosen at boot; log refused in production |
 | `src/metrics/` | Prometheus counters, histograms, gauges | Process-local; bounded label set |
 | `src/openapi/` | OpenAPI 3.1 generation from config | Pure; no DB, no HTTP |
 
@@ -99,6 +100,13 @@ between `403` and `404`.
   parameters travel with each hash and can be upgraded lazily.
 - **Unknown accounts** still pay a dummy Argon2 verification, and both failure
   paths return the same `401 invalid credentials`.
+- **Password reset** tokens are 256-bit, stored as SHA-256, single-use, and
+  replaced when a new one is requested. A reset updates the hash and revokes
+  every session in the same transaction. Mail is sent after the write; an SMTP
+  failure is logged and still returns `202`, because the response must not
+  depend on whether the address exists or the mail server is up.
+- **Reset links** are built from `auth.passwordReset.resetUrl` or
+  `${appUrl}/reset-password`; boot fails if neither exists.
 
 ## Audit
 

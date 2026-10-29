@@ -7,6 +7,7 @@ const rules = { list: 'true', view: 'true', create: null, update: null, delete: 
 const withAuth = configSchema.parse({
   appUrl: 'https://api.example.com',
   auth: { allowSignup: false },
+  email: { provider: 'log', from: 'noreply@example.com' },
   tables: [
     {
       name: 'posts',
@@ -52,6 +53,8 @@ describe('buildOpenApi', () => {
         '/api/v1/auth/logout',
         '/api/v1/auth/me',
         '/api/v1/auth/register',
+        '/api/v1/auth/request-password-reset',
+        '/api/v1/auth/reset-password',
       ]),
     )
 
@@ -92,6 +95,18 @@ describe('buildOpenApi', () => {
     expect(item.get.responses[404]).toBeDefined()
     expect(item.patch.responses[403]).toBeDefined()
     expect(item.delete.responses[403]).toBeDefined()
+  })
+
+  it('omits password reset paths when email is not configured', () => {
+    const noEmail = configSchema.parse({
+      appUrl: 'https://api.example.com',
+      auth: { allowSignup: false },
+      tables: [],
+    })
+    const specWithoutEmail = buildOpenApi(noEmail, '1.0.0') as Loose
+
+    expect(Object.keys(specWithoutEmail.paths)).toContain('/api/v1/auth/login')
+    expect(Object.keys(specWithoutEmail.paths)).not.toContain('/api/v1/auth/request-password-reset')
   })
 
   it('omits auth paths when auth is disabled', () => {

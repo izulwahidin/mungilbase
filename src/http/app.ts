@@ -10,6 +10,7 @@ import { anonymous, type AuthContext } from '../auth/context.js'
 import { AuthService } from '../auth/service.js'
 import { bearerToken } from '../auth/bearer.js'
 import { recordAudit } from '../audit/log.js'
+import { createMailer, type Mailer } from '../email/mailer.js'
 import { MetricsCollector } from '../metrics/collector.js'
 import { buildOpenApi } from '../openapi/spec.js'
 import { createRegistry, type Registry } from '../tables/registry.js'
@@ -38,6 +39,8 @@ export interface AppDeps {
   registry?: Registry
   /** Replaces token verification entirely; tests use it. */
   auth?: (c: Context<AppEnv>) => AuthContext | Promise<AuthContext>
+  /** Overrides the mailer built from `email` config; tests use it. */
+  mailer?: Mailer
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
@@ -45,6 +48,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const startedAt = Date.now()
   const registry = deps.registry ?? createRegistry(deps.config)
   const metrics = new MetricsCollector()
+  const mailer = deps.mailer ?? (deps.config.email ? createMailer(deps.config.email) : undefined)
   const authService = deps.db && deps.config.auth ? new AuthService(deps.db, deps.config.auth) : null
 
   // A test hook can replace token verification entirely; production uses the
@@ -105,7 +109,14 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   // Auth routes register before CRUD so `/api/v1/auth/*` cannot be shadowed by
   // the `/:table/:id` patterns.
-  if (authService && deps.db) registerAuthRoutes(app, { service: authService, db: deps.db })
+  if (authService && deps.db) {
+    registerAuthRoutes(app, {
+      service: authService,
+      db: deps.db,
+      config: deps.config,
+      mailer,
+    })
+  }
   if (deps.db) registerCrudRoutes(app, { db: deps.db, registry })
 
   const recordFailure = (c: Context<AppEnv>, code: string, status: number): void => {

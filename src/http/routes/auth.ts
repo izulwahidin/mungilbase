@@ -4,7 +4,9 @@ import type { AppEnv } from '../app.js'
 import type { AuthService } from '../../auth/service.js'
 import { bearerToken } from '../../auth/bearer.js'
 import { recordAudit } from '../../audit/log.js'
+import type { MungilConfig } from '../../config/schema.js'
 import type { Db } from '../../db/connect.js'
+import type { Mailer } from '../../email/mailer.js'
 import { readJson } from '../body.js'
 import { clientIp } from '../client-ip.js'
 import { badRequest, unauthorized } from '../errors.js'
@@ -18,12 +20,26 @@ const credentialsSchema = z
 
 const refreshSchema = z.object({ refreshToken: z.string().min(1).max(256) }).strict()
 
+const resetRequestSchema = z.object({ email: z.string().min(3).max(254) }).strict()
+
+const resetPasswordSchema = z
+  .object({ token: z.string().min(1).max(256), password: z.string().min(1).max(1024) })
+  .strict()
+
 export interface AuthRoutesDeps {
   service: AuthService
   db: Db
+  config: MungilConfig
+  mailer?: Mailer
 }
 
 export function registerAuthRoutes(app: Hono<AppEnv>, deps: AuthRoutesDeps): void {
+  const { mailer } = deps
+  const passwordReset = deps.config.auth?.passwordReset
+  const resetUrl =
+    passwordReset?.resetUrl ??
+    (deps.config.appUrl ? `${deps.config.appUrl.replace(/\/+$/, '')}/reset-password` : null)
+
   app.post('/api/v1/auth/register', async (c) => {
     const credentials = parse(credentialsSchema, await readJson(c))
     const result = await deps.service.register(credentials, { ip: clientIp(c) })
@@ -59,6 +75,41 @@ export function registerAuthRoutes(app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
     })
     return c.json(result)
   })
+
+  if (passwordReset?.enabled && mailer && resetUrl) {
+    app.post('/api/v1/auth/request-password-reset', async (c) => {
+      const body = parse(resetRequestSchema, await readJson(c))
+      const result = await deps.service.requestPasswordReset(body.email, { ip: clientIp(c) }, mailer, {
+        resetUrl,
+        ttlSeconds: passwordReset.tokenTtlSeconds,
+        maxRequestsPerHour: passwordReset.maxRequestsPerHour,
+      })
+
+      recordAudit(deps.db, {
+        event: 'auth.password_reset_requested',
+        outcome: 'success',
+        requestId: c.get('requestId'),
+        userId: result.userId,
+      })
+
+      // Same answer whether or not the address exists.
+      return c.json({ status: 'accepted' }, 202)
+    })
+
+    app.post('/api/v1/auth/reset-password', async (c) => {
+      const body = parse(resetPasswordSchema, await readJson(c))
+      const user = await deps.service.resetPassword(body.token, body.password)
+
+      recordAudit(deps.db, {
+        event: 'auth.password_reset',
+        outcome: 'success',
+        requestId: c.get('requestId'),
+        userId: user.id,
+      })
+
+      return c.json({ status: 'ok' })
+    })
+  }
 
   app.post('/api/v1/auth/logout', (c) => {
     const token = bearerToken(c.req.header('authorization'))

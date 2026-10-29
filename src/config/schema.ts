@@ -75,8 +75,52 @@ export const authConfigSchema = z
           .default({}),
       })
       .default({}),
+    passwordReset: z
+      .object({
+        enabled: z.boolean().default(true),
+        tokenTtlSeconds: z.number().int().min(300).max(86_400).default(1_800),
+        maxRequestsPerHour: z.number().int().min(1).max(100).default(3),
+        /** Frontend URL that receives `?token=…`. Defaults to `${appUrl}/reset-password`. */
+        resetUrl: z.string().url().optional(),
+      })
+      .strict()
+      .default({}),
   })
   .strict()
+
+export const emailConfigSchema = z
+  .object({
+    /**
+     * `log` prints the message to stdout. Development only: a reset link in
+     * production logs is a credential leak.
+     */
+    provider: z.enum(['log', 'smtp']).default('log'),
+    from: z.string().min(3).max(320),
+    smtp: z
+      .object({
+        host: z.string().min(1),
+        port: z.number().int().min(1).max(65_535).default(587),
+        secure: z.boolean().default(false),
+        user: z.string().min(1).optional(),
+        /** Name of the env var holding the password. Never the password itself. */
+        passwordEnv: z
+          .string()
+          .regex(/^[A-Z][A-Z0-9_]*$/, 'Use an environment variable name')
+          .default('MUNGIL_SMTP_PASSWORD'),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((email, ctx) => {
+    if (email.provider === 'smtp' && !email.smtp) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['smtp'],
+        message: 'smtp settings are required when provider is "smtp"',
+      })
+    }
+  })
 
 export const tableSchema = z
   .object({
@@ -117,6 +161,8 @@ export const configSchema = z
     logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     /** Omit to disable authentication routes entirely. */
     auth: authConfigSchema.optional(),
+    /** Required for password reset emails. */
+    email: emailConfigSchema.optional(),
     tables: z.array(tableSchema).default([]),
   })
   .strict()
@@ -209,11 +255,22 @@ export const configSchema = z
         }
       }
     }
+
+    if (config.email && config.auth?.passwordReset.enabled) {
+      if (!config.appUrl && !config.auth.passwordReset.resetUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['appUrl'],
+          message: 'Password reset needs appUrl or auth.passwordReset.resetUrl to build the link',
+        })
+      }
+    }
   })
 
 export type FieldType = z.infer<typeof fieldTypeSchema>
 export type FieldConfig = z.infer<typeof fieldSchema>
 export type AuthConfig = z.infer<typeof authConfigSchema>
+export type EmailConfig = z.infer<typeof emailConfigSchema>
 export type RuleConfig = z.infer<typeof ruleSchema>
 export type RulesConfig = z.infer<typeof rulesSchema>
 export type TableConfig = z.infer<typeof tableSchema>

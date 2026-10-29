@@ -182,11 +182,30 @@ planned restore path.
 
 ### Lost password / locked out
 
+Self-service reset needs `email` config, `auth.passwordReset.enabled` (default
+true), and a link target (`appUrl` or `auth.passwordReset.resetUrl`). The user
+calls:
+
+```bash
+curl -X POST https://api.example.com/api/v1/auth/request-password-reset \
+  -H 'content-type: application/json' -d '{"email":"user@example.com"}'
+```
+
+The answer is always `202`, whether or not the account exists. Reset tokens are
+hashed, single-use and expire after 30 minutes; completing a reset revokes every
+session for that account. Throttles: 3 requests/hour per address, 15/hour per
+IP by default.
+
+If email is not configured, or mail delivery is broken, the operator path is:
+
 ```bash
 MUNGIL_USER_PASSWORD='new long password' npm run user:passwd -- user@example.com
 ```
 
-There is no self-service email reset yet. This CLI is the supported path.
+SMTP settings live in `email`; the password comes from the environment variable
+named by `email.smtp.passwordEnv` (default `MUNGIL_SMTP_PASSWORD`). The `log`
+provider is refused when `NODE_ENV=production`, because it would write reset
+links into the log stream.
 
 ### Suspected stolen session token
 

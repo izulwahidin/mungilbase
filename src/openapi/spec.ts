@@ -337,6 +337,71 @@ function addAuth(schemas: Record<string, Schema>, paths: Record<string, PathItem
   }
 }
 
+function addPasswordReset(paths: Record<string, PathItem>): void {
+  paths['/api/v1/auth/request-password-reset'] = {
+    post: {
+      summary: 'Request a password reset',
+      description:
+        'Always returns 202 for a well-formed address, whether or not an account exists. Throttled per address and per IP.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['email'],
+              additionalProperties: false,
+              properties: { email: { type: 'string', format: 'email', maxLength: 254 } },
+            },
+          },
+        },
+      },
+      responses: {
+        202: jsonResponse('Accepted', {
+          type: 'object',
+          required: ['status'],
+          properties: { status: { type: 'string', const: 'accepted' } },
+        }),
+        400: errorResponse('Malformed request'),
+        429: errorResponse('Address or IP is throttled'),
+      },
+      security: [],
+    },
+  }
+
+  paths['/api/v1/auth/reset-password'] = {
+    post: {
+      summary: 'Complete a password reset',
+      description: 'Consumes a single-use token and revokes every session for the account.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['token', 'password'],
+              additionalProperties: false,
+              properties: {
+                token: { type: 'string' },
+                password: { type: 'string', maxLength: 1024 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: jsonResponse('Password changed', {
+          type: 'object',
+          required: ['status'],
+          properties: { status: { type: 'string', const: 'ok' } },
+        }),
+        400: errorResponse('Invalid or expired token, or a weak password'),
+      },
+      security: [],
+    },
+  }
+}
+
 /**
  * Builds an OpenAPI 3.1 document from the same config that drives routing.
  * The spec cannot drift from the API for anything it describes.
@@ -346,7 +411,10 @@ export function buildOpenApi(config: MungilConfig, version: string): Record<stri
   const paths: Record<string, PathItem> = {}
 
   for (const table of config.tables) addTable(schemas, paths, table)
-  if (config.auth) addAuth(schemas, paths)
+  if (config.auth) {
+    addAuth(schemas, paths)
+    if (config.email && config.auth.passwordReset.enabled) addPasswordReset(paths)
+  }
 
   return {
     openapi: '3.1.0',
