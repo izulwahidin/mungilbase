@@ -359,6 +359,9 @@ cp mungil.config.example.json mungil.config.json
 docker compose up -d --build
 ```
 
+Pushing a `v*` tag builds and publishes `ghcr.io/<owner>/mungilbase:<tag>`
+via `.github/workflows/release.yml`.
+
 SQLite lives in `./data` on the host. Schedule `npm run backup -- /backups`
 and read [docs/runbook.md](docs/runbook.md); for continuous replication use the
 Litestream block in `docker-compose.yml`. Before trusting any backup, run
