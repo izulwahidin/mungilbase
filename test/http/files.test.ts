@@ -8,6 +8,7 @@ import { ensureSchema } from '../../src/db/ddl.js'
 import { ensureAuditSchema } from '../../src/audit/log.js'
 import { createApp } from '../../src/http/app.js'
 import { createRegistry } from '../../src/tables/registry.js'
+import { LocalStorage } from '../../src/storage/local.js'
 
 let dir: string
 let db: Db
@@ -159,5 +160,24 @@ describe('file uploads', () => {
 
     const response = await hidden.request(`/api/v1/profiles/${rowId}/files/avatar`)
     expect(response.status).toBe(404)
+  })
+
+  it('deletes replaced and deleted files', async () => {
+    const store = new LocalStorage(dir)
+    const oldKey = (
+      db.prepare(`SELECT "avatar" FROM "profiles" WHERE "id" = ?`).get(rowId) as { avatar: string }
+    ).avatar
+    expect(oldKey).toBeTruthy()
+
+    const replacement = await upload(new Uint8Array([7, 7]), 'image/png', 'new.png')
+    expect(replacement.status).toBe(201)
+    const newKey = ((await replacement.json()) as { key: string }).key
+
+    expect(await store.get(oldKey)).toBeNull()
+    expect(await store.get(newKey)).not.toBeNull()
+
+    const deleted = await app.request(`/api/v1/profiles/${rowId}`, { method: 'DELETE' })
+    expect(deleted.status).toBe(200)
+    expect(await store.get(newKey)).toBeNull()
   })
 })

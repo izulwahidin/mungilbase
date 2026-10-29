@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import type { Storage, StoredFile } from './storage.js'
 
@@ -47,6 +47,31 @@ export class LocalStorage implements Storage {
     const path = this.pathFor(key)
     await rm(path, { force: true })
     await rm(`${path}.meta.json`, { force: true })
+  }
+
+  async list(): Promise<string[]> {
+    const keys: string[] = []
+
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      let entries
+      try {
+        entries = await readdir(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+
+      for (const entry of entries) {
+        if (entry.name.endsWith('.meta.json')) continue
+        if (entry.isDirectory()) {
+          await walk(join(dir, entry.name), `${prefix}${entry.name}/`)
+          continue
+        }
+        keys.push(`${prefix}${entry.name}`)
+      }
+    }
+
+    await walk(this.root, '')
+    return keys
   }
 
   private pathFor(key: string): string {

@@ -6,6 +6,7 @@ import type { Registry } from '../../tables/registry.js'
 import type { Storage } from '../../storage/storage.js'
 import { recordAudit } from '../../audit/log.js'
 import { updateRow, viewRow } from '../../tables/crud.js'
+import { cleanupReplacedFiles, fileKeysForRow } from '../../tables/files.js'
 import { badRequest, notFound } from '../errors.js'
 
 export interface FileRoutesDeps {
@@ -47,16 +48,21 @@ export function registerFileRoutes(app: Hono<AppEnv>, deps: FileRoutesDeps): voi
     }
 
     const data = Buffer.from(await file.arrayBuffer())
-    const key = buildKey(table.name, c.req.param('id'), field.name, file.name, contentType)
+    const id = c.req.param('id')
+    const key = buildKey(table.name, id, field.name, file.name, contentType)
+    const previousKeys = fileKeysForRow(deps.db, table, id)
 
     await deps.storage.put(key, data, contentType, file.name)
 
     try {
       // The update rule is the authorization check. If it denies, the file is
       // removed again so a denied upload cannot fill the disk.
-      const row = updateRow(deps.db, table, c.get('auth'), c.req.param('id'), {
+      const row = updateRow(deps.db, table, c.get('auth'), id, {
         [field.name]: key,
       })
+
+      // Replacing a file leaves the old object unreferenced.
+      await cleanupReplacedFiles(deps.storage, table, previousKeys, row)
 
       recordAudit(deps.db, {
         event: 'file.upload',

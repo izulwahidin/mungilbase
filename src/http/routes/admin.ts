@@ -10,6 +10,13 @@ import type { Db } from '../../db/connect.js'
 import type { RegisteredTable, Registry } from '../../tables/registry.js'
 import type { AuthContext } from '../../auth/context.js'
 import { createRow, deleteRow, listRows, updateRow, viewRow } from '../../tables/crud.js'
+import {
+  cleanupReplacedFiles,
+  deleteStoredFiles,
+  fileKeysForRow,
+  fileKeysInRow,
+} from '../../tables/files.js'
+import type { Storage } from '../../storage/storage.js'
 import { AppError, badRequest, forbidden, notFound } from '../errors.js'
 import { clientIp } from '../client-ip.js'
 import { dashboardPage, errorPage, listPage, loginPage, recordPage } from '../../admin/html.js'
@@ -24,6 +31,7 @@ export interface AdminRoutesDeps {
   db: Db
   registry: Registry
   config: MungilConfig
+  storage: Storage
 }
 
 /**
@@ -198,9 +206,11 @@ export function registerAdminRoutes(parent: Hono<AppEnv>, deps: AdminRoutesDeps)
     assertCsrf(c, body)
     const id = c.req.param('id')
     const values = formValues(table, body)
+    const previousKeys = fileKeysForRow(deps.db, table, id)
 
     try {
-      updateRow(deps.db, table, adminContext(user), id, values)
+      const row = updateRow(deps.db, table, adminContext(user), id, values)
+      await cleanupReplacedFiles(deps.storage, table, previousKeys, row)
       auditWrite(c, deps, user, 'admin.update', table.name, 'update', id)
       return c.redirect(`/admin/tables/${encodeURIComponent(table.name)}`, 303)
     } catch (error) {
@@ -221,7 +231,8 @@ export function registerAdminRoutes(parent: Hono<AppEnv>, deps: AdminRoutesDeps)
     assertCsrf(c, body)
     const id = c.req.param('id')
 
-    deleteRow(deps.db, table, adminContext(user), id)
+    const deleted = deleteRow(deps.db, table, adminContext(user), id)
+    await deleteStoredFiles(deps.storage, fileKeysInRow(table, deleted))
     auditWrite(c, deps, user, 'admin.delete', table.name, 'delete', id)
     return c.redirect(`/admin/tables/${encodeURIComponent(table.name)}`, 303)
   })

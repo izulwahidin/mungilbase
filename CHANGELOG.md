@@ -4,6 +4,24 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-30
+
+### Added
+
+- S3-compatible storage (AWS S3, Cloudflare R2, MinIO) alongside local disk,
+  with prefix scoping and credentials read only from environment variables.
+- Automatic file cleanup when a row is deleted or a file is replaced, plus
+  `npm run files:gc` to collect unreferenced objects (dry run by default).
+- `npm run sdk` generates a dependency-free typed TypeScript client from the
+  config; CI regenerates and typechecks it.
+- 100,000-row performance baseline; composite-index guidance for filter+sort
+  queries.
+
+### Changed
+
+- Schema sync and uploads delete replaced files; deleting a row now removes its
+  stored objects.
+
 ## [0.2.0] — 2026-10-30
 
 ### Added

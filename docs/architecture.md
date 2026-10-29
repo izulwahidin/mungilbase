@@ -32,7 +32,8 @@ operate. That is the feature.
 | `src/audit/` | Append-only security events | Never throws; no update/delete path |
 | `src/admin/` | Server-rendered HTML for `/admin` | Every value escaped; no client-side JS |
 | `src/email/` | SMTP or development log mailer | Provider chosen at boot; log refused in production |
-| `src/storage/` | Local file storage behind an interface | Generated keys only; validates the storage root |
+| `src/storage/` | Local or S3-compatible file storage | Generated keys only; validates the storage root |
+| `src/sdk/` | TypeScript client generation from config | Pure string generation; no runtime dependency |
 | `src/metrics/` | Prometheus counters, histograms, gauges | Process-local; bounded label set |
 | `src/openapi/` | OpenAPI 3.1 generation from config | Pure; no DB, no HTTP |
 
@@ -180,9 +181,21 @@ A `file` field stores a string key; the bytes live in `storage.local.dir`.
   view rule, then streams the object with a sandboxing CSP and `nosniff`.
 - Keys are server-generated: `<table>/<sha256(id)[0:16]>/<field>/<uuid>.<ext>`.
   The storage adapter re-validates them and refuses anything outside its root.
-- Deleting a row does not delete files. There is no GC job yet; the runbook
-  describes manual pruning.
-- The `Storage` interface is small enough to add S3 later; v0.1 is local disk.
+- Deleting a row deletes its files, and replacing a file deletes the previous
+  object. A crash can still interrupt that sequence; `npm run files:gc` compares
+  stored keys with every referenced file value and removes the rest (dry run by
+  default).
+- Storage is behind a small interface with two implementations: local disk and
+  S3-compatible (AWS S3, R2, MinIO). Keys are prefixed in the bucket; the
+  original filename travels as object metadata.
+
+## SDK
+
+`npm run sdk` renders one TypeScript file from `MungilConfig`: interfaces with
+the same nullability as the API, table and file methods, auth methods, and a
+typed error class. There is no runtime dependency on MungilBase and no
+hand-maintained drift: CI regenerates it from the example config and typechecks
+the result with `strict`.
 
 ## Metrics and load shedding
 

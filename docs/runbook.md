@@ -279,20 +279,33 @@ application itself never does it.
 
 ## Files
 
-Uploaded files live outside SQLite in `storage.local.dir` (default
-`./data/files`). They are **not** included in `npm run backup` or Litestream.
+Uploaded files live outside SQLite: `storage.local.dir` (default
+`./data/files`) or an S3-compatible bucket. They are **not** included in
+`npm run backup` or Litestream.
 
-- Back the directory up separately (filesystem snapshot or `rsync`). If you need
-  DB and files consistent, pause writes, snapshot the DB, then sync the files.
-- Deleting a row does not delete its files. Keys are
-  `<table>/<id-hash>/<field>/<uuid>.<ext>`; find orphans by listing keys and
-  checking the corresponding rows, or prune by age.
+- Local disk: back the directory up separately (filesystem snapshot or
+  `rsync`). If you need DB and files consistent, pause writes, snapshot the DB,
+  then sync the files.
+- S3: enable bucket versioning or replicate the bucket. The identity used by the
+  app needs Put/Get/Delete/List on the configured prefix and nothing else.
+- Deleting a row deletes its files; replacing a file deletes the old object.
+  A crash between the DB write and the object delete can still leave orphans.
+  Keys are `<table>/<id-hash>/<field>/<uuid>.<ext>`.
+
+  ```bash
+  npm run files:gc                 # dry run, reports counts
+  npm run files:gc -- --apply      # delete unreferenced objects
+  ```
+
+  Run the dry run after any incident involving uploads, then apply.
 - Per-field limits are enforced (`maxBytes`, `allowedTypes`). Content type is
   taken from the multipart header; there is no magic-byte sniffing or malware
   scan yet.
 - Responses are served inline with a sandboxing CSP and `nosniff`, so an SVG
   upload cannot run script on the API origin.
-- Disk usage is not in `/metrics`; monitor the volume with the system tooling.
+- Disk/bucket usage is not in `/metrics`; monitor it with the system tooling.
+
+## Load shedding and capacity
 
 ## Load shedding and capacity
 
@@ -310,19 +323,26 @@ failures cheap.
 
 ## Performance baseline
 
-Measured on a 20,000-row table, single Node 22 process, SQLite on local NTFS,
-mixed workload (`/health`, list with `limit=20`, filtered list sorted by
-`created_at`). Values are from `npm run bench`:
+Measured on a **100,000-row** table, single Node 22 process, SQLite on local
+NTFS, mixed workload (`/health`, list with `limit=20`, filtered list sorted by
+`created_at` with a composite `(done, created_at)` index). Values are from
+`npm run bench`:
 
 | Concurrency | Requests | Throughput | p50 | p95 | p99 | Errors |
 |---|---|---|---|---|---|---|
-| 16 | 9,347 | 934 req/s | 15 ms | 29 ms | 42 ms | 0 |
-| 64 | 10,556 | 1,048 req/s | 57 ms | 84 ms | 113 ms | 0 |
+| 32 | 8,876 | 886 req/s | 33 ms | 54 ms | 68 ms | 0 |
+| 64 | 7,843 | 778 req/s | 78 ms | 107 ms | 184 ms | 0 |
 
-Server-side request durations logged by the app were ~0.6–0.8 ms; the rest is
-loopback and scheduling overhead. Treat these as a **relative** baseline, not a
-capacity plan: re-run on the target host with a realistic table count and row
-size before sizing anything.
+A useful negative result from the same dataset: with only a single-column
+`done` index, the filtered list chose that index and sorted 50,000 rows in a
+temp B-tree — 84 req/s, p95 510 ms. Adding the composite index moved the query
+to a covering order and restored the numbers above. **Filter + sort needs a
+composite index.**
+
+Server-side request durations logged by the app were sub-millisecond; the rest
+is loopback and scheduling overhead. Treat these as a **relative** baseline,
+not a capacity plan: re-run on the target host with realistic row sizes before
+sizing anything.
 
 ```bash
 npm run bench -- --url http://127.0.0.1:8787 --concurrency 32 --seconds 15

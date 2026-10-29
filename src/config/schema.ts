@@ -200,15 +200,43 @@ export const tableSchema = z
 
 export const storageConfigSchema = z
   .object({
-    provider: z.literal('local').default('local'),
+    provider: z.enum(['local', 's3']).default('local'),
     local: z
       .object({
         dir: z.string().min(1).default('./data/files'),
       })
       .strict()
       .default({}),
+    s3: z
+      .object({
+        bucket: z.string().min(1).max(255),
+        region: z.string().min(1).default('auto'),
+        /** S3-compatible endpoint, e.g. https://minio.example.com */
+        endpoint: z.string().url().optional(),
+        forcePathStyle: z.boolean().default(true),
+        prefix: z.string().max(200).default(''),
+        accessKeyIdEnv: z
+          .string()
+          .regex(/^[A-Z][A-Z0-9_]*$/)
+          .default('MUNGIL_S3_ACCESS_KEY_ID'),
+        secretAccessKeyEnv: z
+          .string()
+          .regex(/^[A-Z][A-Z0-9_]*$/)
+          .default('MUNGIL_S3_SECRET_ACCESS_KEY'),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
+  .superRefine((storage, ctx) => {
+    if (storage.provider === 's3' && !storage.s3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['s3'],
+        message: 's3 settings are required when provider is "s3"',
+      })
+    }
+  })
 
 export const configSchema = z
   .object({

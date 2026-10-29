@@ -1,6 +1,6 @@
 {
   "name": "mungilbase",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A small, self-hosted backend defined by a typed config file: REST, auth, row-level rules, migrations.",
   "type": "module",
   "private": true,
@@ -22,9 +22,12 @@
     "bench": "tsx scripts/bench.ts",
     "check": "npm run typecheck && npm run test && npm run build",
     "ci": "bash scripts/ci.sh",
-    "user:role": "tsx src/cli/set-role.ts"
+    "user:role": "tsx src/cli/set-role.ts",
+    "files:gc": "tsx src/cli/files-gc.ts",
+    "sdk": "tsx src/cli/sdk.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1159.0",
     "@hono/node-server": "^1.13.8",
     "@node-rs/argon2": "^2.2.2",
     "better-sqlite3": "^11.8.1",

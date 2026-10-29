@@ -153,11 +153,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       db: deps.db,
       registry,
       config: deps.config,
+      storage,
     })
   }
   if (deps.db) {
     registerFileRoutes(app, { db: deps.db, registry, storage })
-    registerCrudRoutes(app, { db: deps.db, registry })
+    registerCrudRoutes(app, { db: deps.db, registry, storage })
   }
 
   const recordFailure = (c: Context<AppEnv>, code: string, status: number): void => {

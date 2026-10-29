@@ -6,7 +6,7 @@ A small, self-hosted backend defined by one typed config file: REST endpoints,
 authentication, row-level rules, and migrations. Runs as a single Node process
 with SQLite.
 
-> **Status: v0.2.0 (pre-1.0).** Feature-complete for a single-node self-hosted
+> **Status: v0.3.0 (pre-1.0).** Feature-complete for a single-node self-hosted
 > deployment, but it has not been through an external security audit or a
 > production load test. Read [What works today](#what-works-today) and the
 > [production gate](#production-gate) before relying on it.
@@ -136,6 +136,11 @@ server or in a Referer header. Accounts are linked by provider-verified email;
 an unverified provider email is rejected. Register the callback URL
 `${appUrl}/api/v1/auth/oauth/{google|github}/callback` in the provider console.
 
+Sessions are opaque 256-bit tokens stored as SHA-256 hashes in SQLite, not
+JWTs. That makes logout and revocation immediate instead of "eventually, when
+the token expires". Refresh tokens are single-use: replaying a rotated token
+revokes the entire session family.
+
 ### Files
 
 A `file` field stores a storage key. Two routes handle it:
@@ -147,14 +152,36 @@ A `file` field stores a storage key. Two routes handle it:
 
 Uploads are limited by the field's `maxBytes` (5 MB default) and
 `allowedTypes` MIME prefixes (`['image/']` default). The file is written before
-the row update; if the update rule denies, the file is deleted again. Files live
-outside the database (`storage.local.dir`, default `./data/files`), so back them
-up separately from SQLite. Deleting a row does not delete its files yet.
+the row update; if the update rule denies, the file is deleted again. Replacing
+a file deletes the old object, and deleting a row deletes the files it
+referenced.
 
-Sessions are opaque 256-bit tokens stored as SHA-256 hashes in SQLite, not
-JWTs. That makes logout and revocation immediate instead of "eventually, when
-the token expires". Refresh tokens are single-use: replaying a rotated token
-revokes the entire session family.
+Storage is local disk by default (`storage.local.dir`, `./data/files`).
+S3-compatible backends work too:
+
+```ts
+storage: {
+  provider: 's3',
+  s3: {
+    bucket: 'mungil-files',
+    region: 'auto',
+    endpoint: 'https://minio.example.com', // omit for AWS
+    prefix: 'mungil',
+    // credentials read from MUNGIL_S3_ACCESS_KEY_ID / MUNGIL_S3_SECRET_ACCESS_KEY
+  },
+}
+```
+
+The bucket needs Put/Get/Delete/List on the configured prefix. Files are not
+part of the SQLite backup; use bucket versioning or replicate them separately.
+
+Objects can still be orphaned by a crash between the row write and the delete.
+Collect them with:
+
+```bash
+npm run files:gc              # dry run
+npm run files:gc -- --apply   # delete unreferenced objects
+```
 
 Auth users live in internal `_mungil_*` tables. They are not config tables, so
 a `user_id` column in your schema is a plain text reference to `auth.uid`, not
@@ -196,6 +223,19 @@ It can list, create, edit and delete rows. There is no file upload support yet.
 same config that drives routing: table schemas, create/update shapes, query
 parameters, error responses, and auth paths. It cannot describe an endpoint
 that does not exist.
+
+### TypeScript SDK
+
+```bash
+npm run sdk                                        # -> ./sdk/mungil-client.ts
+npm run sdk -- ./mungil.config.ts ./sdk/client.ts
+```
+
+Generates a dependency-free typed client from the config: read/create/update
+interfaces per table, `list/get/create/update/delete` methods, file upload and
+download helpers, auth methods (`login`, `register`, `refresh`, `logout`, `me`),
+and a typed `MungilApiError`. The generated file compiles on its own; CI
+typechecks it on every run.
 
 ### Audit log
 
@@ -319,8 +359,10 @@ anonymous requests rather than an empty result.
 - [x] OAuth login with Google and GitHub, linking by provider-verified email
 - [x] Roles (`user`, `admin`) with explicit admin rule bypass
 - [x] Server-rendered admin panel at `/admin` with CSRF-protected forms
-- [x] File uploads to local storage with size/MIME limits and rule checks
+- [x] File uploads to local or S3-compatible storage, with size/MIME limits,
+      rule checks, automatic cleanup on replace/delete, and `files:gc`
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`
+- [x] TypeScript SDK generated from the config (`npm run sdk`)
 - [x] Append-only audit log for denials, throttling, 401s, 5xx, auth and admin events
 - [x] Prometheus `/metrics`, load shedding, optional Sentry-compatible reporting
 - [x] Verified online backups + automated restore drill (runs in CI)
@@ -328,8 +370,8 @@ anonymous requests rather than an empty result.
 
 ## Not built yet
 
-- SDK codegen, S3-compatible storage, upload malware scanning
-- Orphaned-file cleanup after row deletes
+- Upload malware scanning and per-account storage quotas
+- Email deliverability tooling (bounces, complaints)
 - External penetration test before a public launch
 
 ## Production gate
@@ -340,14 +382,18 @@ A release is not "production-ready" until all of these are true:
 - [x] DB-backed sessions, refresh rotation with reuse detection, revocable
 - [x] Login throttling per IP and per account; uniform errors; dummy verify
 - [x] CORS closed by default
-- [ ] Exact role matching from a closed enum (roles are not implemented yet)
+- [x] Exact role matching from a closed enum (`user` / `admin`), no substring checks
 - [x] Rule denials return `403 rule_violation` and are written to the audit log
 - [x] Rule compiler property-tested; no interpolation of values
 - [x] Migrations checksummed, drift-detected, transactional
 - [x] Backup + tested restore (`scripts/restore-drill.sh`, run in CI)
 - [x] Structured logs, request ids, health/version, and opt-in Sentry-compatible error tracking
-- [ ] Load test against a realistic dataset; N+1 and index review
-- [ ] Threat model reviewed; external penetration test before public launch
+- [x] Capacity baseline at 100k rows, with composite-index guidance and a k6 harness
+- [x] Threat model reviewed and maintained (`docs/threat-model.md`)
+- [ ] External penetration test before a public launch — the only remaining item, and it needs a third party
+
+All code-level items are complete as of v0.3.0. Treat the unchecked item as a
+release blocker for a high-stakes deployment, not as unfinished code.
 
 See [docs/threat-model.md](docs/threat-model.md),
 [docs/architecture.md](docs/architecture.md) and

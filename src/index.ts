@@ -11,7 +11,7 @@ import { ensureAuditSchema } from './audit/log.js'
 import { createErrorReporter } from './telemetry/sentry.js'
 import type { Db } from './db/connect.js'
 
-const VERSION = process.env.MUNGIL_VERSION ?? '0.2.0'
+const VERSION = process.env.MUNGIL_VERSION ?? '0.3.0'
 // Argument wins over environment so `node dist/index.js ./config.json` works
 // even when the process environment is managed by an orchestrator.
 const CONFIG_PATH = process.argv[2] ?? process.env.MUNGIL_CONFIG ?? './mungil.config.ts'

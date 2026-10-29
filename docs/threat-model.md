@@ -107,7 +107,8 @@ launch; **out** = deliberately not handled.
 | Password-cost exhaustion | done (bounded) | Fixed Argon2id cost, login throttling, and `server.maxConcurrency` shedding with `503` |
 | Login brute force | done | Fixed windows per account (5/15 min) and per IP (30/10 min), counters persisted in SQLite; `Retry-After` returned |
 | Query flood / slow filters | done (bounded) | Concurrency cap sheds excess with `503 overloaded`; filters on hot columns should be indexed via config |
-| Storage exhaustion via uploads | partial | Per-file `maxBytes` and MIME allowlists; no per-account quota and no orphan cleanup job yet |
+| Storage exhaustion via uploads | partial | Per-file `maxBytes`, MIME allowlists, automatic cleanup on replace/delete and `files:gc`; no per-account quota yet |
+| S3 credential misuse | done (design) | Credentials only from env vars, least-privilege bucket policy on one prefix, no credentials in config or logs |
 | Oversized expressions | done | 2,000 character rule cap, 64-level nesting cap |
 | Large request bodies | done | 1 MB cap enforced before parsing, plus a post-read byte check |
 | Connection exhaustion | done (single node) | `busy_timeout`, WAL, single-process writes, and load shedding |

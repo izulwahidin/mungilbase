@@ -3,12 +3,20 @@ import type { AppEnv } from '../app.js'
 import type { Db } from '../../db/connect.js'
 import type { Registry, RegisteredTable } from '../../tables/registry.js'
 import { createRow, deleteRow, listRows, updateRow, viewRow } from '../../tables/crud.js'
+import {
+  cleanupReplacedFiles,
+  deleteStoredFiles,
+  fileKeysForRow,
+  fileKeysInRow,
+} from '../../tables/files.js'
+import type { Storage } from '../../storage/storage.js'
 import { readJson } from '../body.js'
 import { notFound } from '../errors.js'
 
 export interface CrudRoutesDeps {
   db: Db
   registry: Registry
+  storage: Storage
 }
 
 export function registerCrudRoutes(app: Hono<AppEnv>, deps: CrudRoutesDeps): void {
@@ -37,13 +45,21 @@ export function registerCrudRoutes(app: Hono<AppEnv>, deps: CrudRoutesDeps): voi
 
   app.patch('/api/v1/:table/:id', async (c) => {
     const table = tableOrThrow(deps.registry, c.req.param('table'))
+    const id = c.req.param('id')
     const body = await readJson(c)
-    return c.json(updateRow(deps.db, table, c.get('auth'), c.req.param('id'), body))
+
+    const previousKeys = fileKeysForRow(deps.db, table, id)
+    const row = updateRow(deps.db, table, c.get('auth'), id, body)
+    await cleanupReplacedFiles(deps.storage, table, previousKeys, row)
+
+    return c.json(row)
   })
 
-  app.delete('/api/v1/:table/:id', (c) => {
+  app.delete('/api/v1/:table/:id', async (c) => {
     const table = tableOrThrow(deps.registry, c.req.param('table'))
-    return c.json(deleteRow(deps.db, table, c.get('auth'), c.req.param('id')))
+    const row = deleteRow(deps.db, table, c.get('auth'), c.req.param('id'))
+    await deleteStoredFiles(deps.storage, fileKeysInRow(table, row))
+    return c.json(row)
   })
 }
 
