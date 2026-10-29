@@ -6,9 +6,10 @@ A small, self-hosted backend defined by one typed config file: REST endpoints,
 authentication, row-level rules, and migrations. Runs as a single Node process
 with SQLite.
 
-> **Status: v0.1 scaffold.** This repository is the start of a rebuild, not a
-> finished product. See [What works today](#what-works-today) and the
-> [production gate](#production-gate) before you rely on it.
+> **Status: v0.2.0 (pre-1.0).** Feature-complete for a single-node self-hosted
+> deployment, but it has not been through an external security audit or a
+> production load test. Read [What works today](#what-works-today) and the
+> [production gate](#production-gate) before relying on it.
 
 ## Why
 
