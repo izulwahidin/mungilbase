@@ -569,6 +569,65 @@ export class AuthService {
     return { id: row.userId, email: row.email, role: row.role, emailVerified: true }
   }
 
+  /**
+   * Links an OAuth identity to an account by email.
+   *
+   * The provider must have verified the address; otherwise an attacker could
+   * claim someone else's account. Existing password accounts keep their
+   * password and become verified.
+   */
+  async findOrCreateOAuthUser(email: string): Promise<AuthUser> {
+    const normalized = normalizeEmail(email)
+
+    const existing = this.db
+      .prepare(
+        `SELECT "id", "email", "role", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
+      )
+      .get(normalized) as
+      | { id: string; email: string; role: AuthRole; email_verified: number }
+      | undefined
+
+    if (existing) {
+      if (existing.email_verified !== 1) {
+        this.db
+          .prepare(`UPDATE "${AUTH_TABLES.users}" SET "email_verified" = 1, "updated_at" = ? WHERE "id" = ?`)
+          .run(this.now().toISOString(), existing.id)
+      }
+      return toAuthUser({ ...existing, email_verified: 1 })
+    }
+
+    const id = randomUUID()
+    const timestamp = this.now().toISOString()
+
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO "${AUTH_TABLES.users}"
+             ("id", "email", "password_hash", "role", "email_verified", "created_at", "updated_at")
+           VALUES (?, ?, ?, 'user', 1, ?, ?)`,
+        )
+        .run(id, normalized, '!oauth', timestamp, timestamp)
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error
+      // Lost a race with another request; read the winner.
+      const row = this.db
+        .prepare(
+          `SELECT "id", "email", "role", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
+        )
+        .get(normalized) as
+        | { id: string; email: string; role: AuthRole; email_verified: number }
+        | undefined
+      if (!row) throw error
+      return toAuthUser(row)
+    }
+
+    return { id, email: normalized, role: 'user', emailVerified: true }
+  }
+
+  async startSession(user: AuthUser): Promise<AuthSessionResult> {
+    return this.createSession(user)
+  }
+
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
     const email = normalizeEmail(input.email)
     const accountKey = `acct:${email}`

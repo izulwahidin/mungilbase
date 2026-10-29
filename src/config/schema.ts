@@ -116,6 +116,33 @@ export const authConfigSchema = z
       })
       .strict()
       .default({}),
+    oauth: z
+      .object({
+        google: z
+          .object({
+            clientId: z.string().min(1),
+            clientSecretEnv: z
+              .string()
+              .regex(/^[A-Z][A-Z0-9_]*$/)
+              .default('MUNGIL_GOOGLE_CLIENT_SECRET'),
+            callbackUrl: z.string().url().optional(),
+          })
+          .strict()
+          .optional(),
+        github: z
+          .object({
+            clientId: z.string().min(1),
+            clientSecretEnv: z
+              .string()
+              .regex(/^[A-Z][A-Z0-9_]*$/)
+              .default('MUNGIL_GITHUB_CLIENT_SECRET'),
+            callbackUrl: z.string().url().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 
@@ -309,6 +336,14 @@ export const configSchema = z
           message: 'Password reset needs appUrl or auth.passwordReset.resetUrl to build the link',
         })
       }
+    }
+
+    if (config.auth?.oauth && !config.appUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['appUrl'],
+        message: 'OAuth needs appUrl to build callback URLs',
+      })
     }
 
     if (config.auth?.emailVerification.enabled) {

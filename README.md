@@ -111,6 +111,30 @@ Registered only when the config has an `auth` block.
 | `POST` | `/api/v1/auth/logout` | `204`, revokes the session |
 | `GET` | `/api/v1/auth/me` | current user; `401` without a token |
 
+### OAuth
+
+Google and GitHub are supported when configured:
+
+```ts
+auth: {
+  oauth: {
+    google: { clientId: '…' },   // secret: MUNGIL_GOOGLE_CLIENT_SECRET
+    github: { clientId: '…' },   // secret: MUNGIL_GITHUB_CLIENT_SECRET
+  },
+}
+```
+
+| Method | Path |
+|---|---|
+| `GET` | `/api/v1/auth/oauth/:provider/start` |
+| `GET` | `/api/v1/auth/oauth/:provider/callback` |
+
+The callback redirects to `${appUrl}/auth/callback` with tokens in the URL
+**fragment** (`#access_token=…&refresh_token=…`), which is never sent to a
+server or in a Referer header. Accounts are linked by provider-verified email;
+an unverified provider email is rejected. Register the callback URL
+`${appUrl}/api/v1/auth/oauth/{google|github}/callback` in the provider console.
+
 ### Files
 
 A `file` field stores a storage key. Two routes handle it:
@@ -290,16 +314,22 @@ anonymous requests rather than an empty result.
       family revocation, logout, per-account and per-IP login throttling
 - [x] Self-service password reset via SMTP (or a development log provider),
       with hashed single-use tokens and full session revocation
+- [x] Email verification with an optional login gate and `auth.verified` rules
+- [x] OAuth login with Google and GitHub, linking by provider-verified email
+- [x] Roles (`user`, `admin`) with explicit admin rule bypass
+- [x] Server-rendered admin panel at `/admin` with CSRF-protected forms
+- [x] File uploads to local storage with size/MIME limits and rule checks
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`
-- [x] Append-only audit log for denials, throttling, 401s, 5xx and auth events
+- [x] Append-only audit log for denials, throttling, 401s, 5xx, auth and admin events
+- [x] Prometheus `/metrics`, load shedding, optional Sentry-compatible reporting
 - [x] Verified online backups + automated restore drill (runs in CI)
 - [x] Docker image, compose file, CI workflow, threat model, runbook
 
 ## Not built yet
 
-- Admin UI, file uploads, SDK codegen
-- Email verification, OAuth
-- Roles beyond `authenticated` (`auth.uid` only)
+- SDK codegen, S3-compatible storage, upload malware scanning
+- Orphaned-file cleanup after row deletes
+- External penetration test before a public launch
 
 ## Production gate
 

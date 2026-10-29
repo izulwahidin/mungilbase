@@ -358,6 +358,25 @@ and edit every row, set `auth.adminBypassRules: true` and understand the
 trade-off: any admin token can then read and write everything, and admin writes
 are not yet separately audited.
 
+## OAuth setup
+
+1. Create an OAuth app with the provider (Google Cloud Console or GitHub
+   Developer Settings).
+2. Callback URL: `${appUrl}/api/v1/auth/oauth/google/callback` or
+   `.../github/callback` (or the per-provider `callbackUrl`).
+3. Put the client id in config and the secret in the environment variable named
+   by `clientSecretEnv` (default `MUNGIL_GOOGLE_CLIENT_SECRET` /
+   `MUNGIL_GITHUB_CLIENT_SECRET`). Missing secrets fail at startup.
+4. Send users to `GET /api/v1/auth/oauth/{provider}/start`.
+
+Accounts are linked by provider-verified email. A provider email that is not
+verified is rejected; existing password accounts are linked and marked
+verified. The callback redirects to `${appUrl}/auth/callback` with tokens in
+the fragment, so the frontend must read `location.hash` and store them.
+
+There is no UI for unlinking a provider or listing linked providers; accounts
+are keyed by email, not by provider id.
+
 ## Admin panel
 
 Reachable at `https://your-host/admin`. Only `admin` accounts can sign in; the

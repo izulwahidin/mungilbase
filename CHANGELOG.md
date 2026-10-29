@@ -4,6 +4,8 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-30
+
 ### Added
 
 - Self-service password reset: `POST /api/v1/auth/request-password-reset` and
@@ -27,6 +29,9 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 - Email verification: hashed single-use tokens, optional `required` login gate,
   resend endpoint with throttling, `auth.verified` exposed to rules, and
   verification links delivered through the existing mailer.
+- OAuth login with Google and GitHub: state-cookie CSRF protection, verified
+  email linking, token return in the redirect fragment, and account creation
+  for first-time users.
 
 ## [0.1.0] — 2026-10-29
 

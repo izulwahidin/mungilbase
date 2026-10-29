@@ -54,6 +54,9 @@ launch; **out** = deliberately not handled.
 | Stolen refresh token reuse | done | Single-use rotation; replay revokes the whole family inside one transaction |
 | Session fixation | done | Server-issued session ids; clients cannot supply or choose them |
 | Bearer token in URL | done | Tokens accepted only from the `Authorization` header |
+| OAuth login CSRF | done | 256-bit state in an HttpOnly cookie, constant-time compared, 10-minute TTL |
+| OAuth account takeover via unverified email | done | Provider email must be verified; GitHub addresses come from `/user/emails`, never the public profile field |
+| Tokens exposed in the OAuth redirect | partial | Tokens are returned in the URL fragment (not sent to servers or Referer); they can remain in browser history until the tab is closed |
 | Password reset token theft | done | 256-bit tokens hashed at rest, single-use, 30 min default TTL, replaced on re-request, reset revokes all sessions |
 | Reset link leaking through logs | done | The `log` email provider is refused when `NODE_ENV=production` |
 | Unverified addresses used for access | done (opt-in) | `emailVerification.required` blocks login with `403 email_not_verified`; `auth.verified` is available to rules |

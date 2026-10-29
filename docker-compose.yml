@@ -1,7 +1,7 @@
 services:
   mungilbase:
     build: .
-    image: mungilbase:0.1.0
+    image: mungilbase:0.2.0
     restart: unless-stopped
     ports:
       - "8787:8787"

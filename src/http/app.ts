@@ -9,6 +9,7 @@ import type { Db } from '../db/connect.js'
 import { anonymous, type AuthContext } from '../auth/context.js'
 import { AuthService } from '../auth/service.js'
 import { bearerToken } from '../auth/bearer.js'
+import { createOAuthProviders, type OAuthProviders } from '../auth/oauth.js'
 import { recordAudit } from '../audit/log.js'
 import { createMailer, type Mailer } from '../email/mailer.js'
 import { MetricsCollector } from '../metrics/collector.js'
@@ -24,6 +25,7 @@ import { registerAdminRoutes } from './routes/admin.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCrudRoutes } from './routes/crud.js'
 import { registerFileRoutes } from './routes/files.js'
+import { registerOAuthRoutes } from './routes/oauth.js'
 
 export interface AppEnv {
   Variables: {
@@ -47,6 +49,8 @@ export interface AppDeps {
   mailer?: Mailer
   /** Optional Sentry-compatible reporter for unhandled errors. */
   reportError?: ErrorReporter
+  /** Overrides provider clients built from config; tests use it. */
+  oauthProviders?: OAuthProviders
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
@@ -57,6 +61,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const mailer = deps.mailer ?? (deps.config.email ? createMailer(deps.config.email) : undefined)
   const storage = createStorage(deps.config.storage)
   const authService = deps.db && deps.config.auth ? new AuthService(deps.db, deps.config.auth) : null
+  const oauthProviders =
+    deps.oauthProviders ??
+    (deps.config.auth?.oauth ? createOAuthProviders(deps.config) : new Map())
 
   // A test hook can replace token verification entirely; production uses the
   // DB-backed opaque tokens below.
@@ -130,6 +137,15 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       config: deps.config,
       mailer,
     })
+
+    if (oauthProviders.size) {
+      registerOAuthRoutes(app, {
+        service: authService,
+        db: deps.db,
+        config: deps.config,
+        providers: oauthProviders,
+      })
+    }
   }
   if (authService && deps.db) {
     registerAdminRoutes(app, {

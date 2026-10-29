@@ -117,6 +117,11 @@ between `403` and `404`.
   hashed tokens in `_mungil_email_verifications`. When `required` is set, login
   refuses unverified accounts after the password check. Rules can use
   `auth.verified` without another join.
+- **OAuth** (Google, GitHub) runs as a browser redirect flow. A random state
+  lives in an HttpOnly cookie and is compared on the callback; codes are
+  exchanged server-side; only provider-verified emails can link or create an
+  account. Tokens return in the redirect fragment so they never reach a server
+  access log.
 
 ## Audit
 
