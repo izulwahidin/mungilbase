@@ -376,7 +376,7 @@ anonymous requests rather than an empty result.
 
 ## Production gate
 
-A release is not "production-ready" until all of these are true:
+Every code-level requirement is met as of **v0.3.0**:
 
 - [x] Argon2id password hashing (versioned PHC strings)
 - [x] DB-backed sessions, refresh rotation with reuse detection, revocable
@@ -390,10 +390,15 @@ A release is not "production-ready" until all of these are true:
 - [x] Structured logs, request ids, health/version, and opt-in Sentry-compatible error tracking
 - [x] Capacity baseline at 100k rows, with composite-index guidance and a k6 harness
 - [x] Threat model reviewed and maintained (`docs/threat-model.md`)
-- [ ] External penetration test before a public launch — the only remaining item, and it needs a third party
 
-All code-level items are complete as of v0.3.0. Treat the unchecked item as a
-release blocker for a high-stakes deployment, not as unfinished code.
+## Before a public launch
+
+These are operational or third-party tasks, not code:
+
+- [ ] External penetration test.
+- [ ] A tested Litestream restore on the target host (the Docker path).
+- [ ] An on-call/support commitment for the deployment.
+- [ ] SMTP deliverability verified with the real provider (bounces, complaints).
 
 See [docs/threat-model.md](docs/threat-model.md),
 [docs/architecture.md](docs/architecture.md) and
