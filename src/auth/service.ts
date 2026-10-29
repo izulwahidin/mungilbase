@@ -7,11 +7,13 @@ import { hashPassword, verifyDummyPassword, verifyPassword } from './password.js
 import { createToken, hashToken, isWellFormedToken } from './tokens.js'
 import { AUTH_TABLES, cleanupAuth } from './schema.js'
 import { checkThrottle, clearThrottle } from './throttle.js'
+import { isAuthRole, type AuthRole } from './roles.js'
 import type { Mailer } from '../email/mailer.js'
 
 export interface AuthUser {
   id: string
   email: string
+  role: AuthRole
 }
 
 export interface TokenPair {
@@ -29,6 +31,7 @@ export interface AuthSessionResult {
 export interface SessionInfo {
   userId: string
   sessionId: string
+  role: AuthRole
 }
 
 export interface Credentials {
@@ -61,6 +64,7 @@ interface UserRow {
   id: string
   email: string
   password_hash: string
+  role: AuthRole
 }
 
 interface RefreshRow {
@@ -68,6 +72,7 @@ interface RefreshRow {
   userId: string
   familyId: string
   email: string
+  role: AuthRole
   usedAt: string | null
   revokedAt: string | null
   tokenExpiresAt: string
@@ -107,7 +112,9 @@ export class AuthService {
    * Creates an account without opening the signup route. Used by the
    * `user:create` CLI so a closed-signup deployment can still bootstrap.
    */
-  async createUser(input: Credentials): Promise<AuthUser> {
+  async createUser(input: Credentials, role: AuthRole = 'user'): Promise<AuthUser> {
+    if (!isAuthRole(role)) throw badRequest(`Unknown role "${String(role)}"`)
+
     const email = normalizeEmail(input.email)
     this.validateNewPassword(input.password)
 
@@ -118,16 +125,17 @@ export class AuthService {
     try {
       this.db
         .prepare(
-          `INSERT INTO "${AUTH_TABLES.users}" ("id", "email", "password_hash", "created_at", "updated_at")
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO "${AUTH_TABLES.users}"
+             ("id", "email", "password_hash", "role", "created_at", "updated_at")
+           VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, email, passwordHash, timestamp, timestamp)
+        .run(id, email, passwordHash, role, timestamp, timestamp)
     } catch (error) {
       if (isUniqueViolation(error)) throw conflict('An account with that email already exists')
       throw error
     }
 
-    return { id, email }
+    return { id, email, role }
   }
 
   /**
@@ -139,8 +147,8 @@ export class AuthService {
     this.validateNewPassword(password)
 
     const row = this.db
-      .prepare(`SELECT "id" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
-      .get(normalized) as { id: string } | undefined
+      .prepare(`SELECT "id", "role" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .get(normalized) as { id: string; role: AuthRole } | undefined
     if (!row) throw notFound('No account with that email')
 
     const passwordHash = await hashPassword(password)
@@ -168,7 +176,7 @@ export class AuthService {
         .run(row.id)
     })
 
-    return { id: row.id, email: normalized }
+    return { id: row.id, email: normalized, role: row.role }
   }
 
   /**
@@ -203,7 +211,7 @@ export class AuthService {
 
     const user = this.db
       .prepare(`SELECT "id", "email" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
-      .get(normalized) as AuthUser | undefined
+      .get(normalized) as { id: string; email: string } | undefined
 
     if (!user) return { sent: false, userId: null }
 
@@ -255,13 +263,13 @@ export class AuthService {
     const row = this.db
       .prepare(
         `SELECT r."user_id" AS "userId", r."expires_at" AS "expiresAt",
-                r."used_at" AS "usedAt", u."email" AS "email"
+                r."used_at" AS "usedAt", u."email" AS "email", u."role" AS "role"
          FROM "${AUTH_TABLES.resets}" r
          JOIN "${AUTH_TABLES.users}" u ON u."id" = r."user_id"
          WHERE r."token_hash" = ?`,
       )
       .get(hashed) as
-      | { userId: string; expiresAt: string; usedAt: string | null; email: string }
+      | { userId: string; expiresAt: string; usedAt: string | null; email: string; role: AuthRole }
       | undefined
 
     if (!row || row.usedAt !== null || row.expiresAt <= now.toISOString()) {
@@ -303,11 +311,33 @@ export class AuthService {
         .prepare(`UPDATE "${AUTH_TABLES.resets}" SET "used_at" = ? WHERE "user_id" = ? AND "used_at" IS NULL`)
         .run(now.toISOString(), row.userId)
 
-      return { id: row.userId, email: row.email }
+      return { id: row.userId, email: row.email, role: row.role }
     })
 
     if (!result) throw badRequest('Invalid or expired reset token')
     return result
+  }
+
+  /**
+   * Operator-only role change. Effective immediately: every request resolves
+   * the role from the database, so no token carries a stale claim.
+   */
+  async setRole(email: string, role: AuthRole): Promise<AuthUser> {
+    if (!isAuthRole(role)) throw badRequest(`Unknown role "${String(role)}"`)
+
+    const normalized = normalizeEmail(email)
+    const row = this.db
+      .prepare(`SELECT "id", "role" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .get(normalized) as { id: string; role: AuthRole } | undefined
+    if (!row) throw notFound('No account with that email')
+
+    if (row.role !== role) {
+      this.db
+        .prepare(`UPDATE "${AUTH_TABLES.users}" SET "role" = ?, "updated_at" = ? WHERE "id" = ?`)
+        .run(role, this.now().toISOString(), row.id)
+    }
+
+    return { id: row.id, email: normalized, role }
   }
 
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
@@ -320,7 +350,9 @@ export class AuthService {
     this.checkIpThrottle(meta.ip)
 
     const user = this.db
-      .prepare(`SELECT "id", "email", "password_hash" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .prepare(
+        `SELECT "id", "email", "password_hash", "role" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
+      )
       .get(email) as UserRow | undefined
 
     const valid = user
@@ -330,7 +362,7 @@ export class AuthService {
     if (!user || !valid) throw unauthorized('Invalid email or password')
 
     clearThrottle(this.db, accountKey)
-    return this.createSession({ id: user.id, email: user.email })
+    return this.createSession({ id: user.id, email: user.email, role: user.role })
   }
 
   /**
@@ -356,7 +388,8 @@ export class AuthService {
                   s."revoked_at" AS "revokedAt",
                   s."expires_at" AS "sessionExpiresAt",
                   s."created_at" AS "sessionCreatedAt",
-                  u."email" AS "email"
+                  u."email" AS "email",
+                  u."role" AS "role"
            FROM "${AUTH_TABLES.tokens}" t
            JOIN "${AUTH_TABLES.sessions}" s ON s."id" = t."session_id"
            JOIN "${AUTH_TABLES.users}" u ON u."id" = s."user_id"
@@ -396,7 +429,7 @@ export class AuthService {
       return {
         ok: true,
         result: {
-          user: { id: row.userId, email: row.email },
+          user: { id: row.userId, email: row.email, role: row.role },
           tokens: this.issueTokens(row.sessionId, now, row.sessionExpiresAt),
         },
       }
@@ -435,20 +468,21 @@ export class AuthService {
 
     const row = this.db
       .prepare(
-        `SELECT s."user_id" AS "userId", s."id" AS "sessionId"
+        `SELECT s."user_id" AS "userId", s."id" AS "sessionId", u."role" AS "role"
          FROM "${AUTH_TABLES.tokens}" t
          JOIN "${AUTH_TABLES.sessions}" s ON s."id" = t."session_id"
+         JOIN "${AUTH_TABLES.users}" u ON u."id" = s."user_id"
          WHERE t."token_hash" = ? AND t."kind" = 'access'
            AND t."expires_at" > ? AND s."expires_at" > ? AND s."revoked_at" IS NULL`,
       )
-      .get(hashToken(accessToken), now, now) as { userId: string; sessionId: string } | undefined
+      .get(hashToken(accessToken), now, now) as SessionInfo | undefined
 
     return row ?? null
   }
 
   userById(id: string): AuthUser | null {
     const row = this.db
-      .prepare(`SELECT "id", "email" FROM "${AUTH_TABLES.users}" WHERE "id" = ?`)
+      .prepare(`SELECT "id", "email", "role" FROM "${AUTH_TABLES.users}" WHERE "id" = ?`)
       .get(id) as AuthUser | undefined
     return row ?? null
   }

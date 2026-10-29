@@ -13,6 +13,9 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
   is refused when `NODE_ENV=production`.
 - Per-address and per-IP throttles for reset requests, and audit events
   `auth.password_reset_requested` / `auth.password_reset`.
+- Roles (`user`, `admin`) stored on the account and resolved on every request,
+  `npm run user:role` to change one, and `auth.adminBypassRules` (default
+  false) to make admins skip table rules.
 
 ## [0.1.0] — 2026-10-29
 

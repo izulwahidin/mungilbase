@@ -162,6 +162,21 @@ describe('read rules', () => {
     expect(viewRow(db, posts, asB, String(post.id)).title).toBe('Public')
   })
 
+  it('bypasses rules only when the admin flag is set', () => {
+    const draft = createRow(db, posts, asA, { author_id: 'u1', title: 'Secret' })
+
+    const roleOnly: AuthContext = { uid: 'u2', role: 'admin' }
+    expect(listRows(db, posts, roleOnly).items).toHaveLength(0)
+    expect(appError(() => viewRow(db, posts, roleOnly, String(draft.id))).code).toBe('not_found')
+
+    const admin: AuthContext = { uid: 'u2', role: 'admin', admin: true }
+    expect(listRows(db, posts, admin).items).toHaveLength(1)
+    expect(viewRow(db, posts, admin, String(draft.id)).title).toBe('Secret')
+
+    const created = createRow(db, posts, admin, { author_id: 'u1', title: 'On behalf' })
+    expect(created.author_id).toBe('u1')
+  })
+
   it('supports filter, sort and pagination', () => {
     createRow(db, posts, asA, { author_id: 'u1', title: 'Alpha', published: true })
     createRow(db, posts, asA, { author_id: 'u1', title: 'Beta', published: true })

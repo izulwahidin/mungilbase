@@ -33,6 +33,10 @@ const DEFAULT_LIMIT = 50
  * there is no code path where a missing rule becomes an allow.
  */
 function ruleFor(table: RegisteredTable, operation: Operation, auth: AuthContext): CompiledRule | null {
+  // Set by the HTTP layer only when the user is an admin AND the operator
+  // enabled `auth.adminBypassRules`. Never inferred from a token claim.
+  if (auth.admin === true) return { sql: '1', params: [] }
+
   const rule = table.rules[operation]
   if (rule === null) return null
   return compileRule(rule, { table: table.name, columns: table.columns, auth })

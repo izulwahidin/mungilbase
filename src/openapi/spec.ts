@@ -235,8 +235,12 @@ function addAuth(schemas: Record<string, Schema>, paths: Record<string, PathItem
   }
   schemas.AuthUser = {
     type: 'object',
-    required: ['id', 'email'],
-    properties: { id: { type: 'string' }, email: { type: 'string' } },
+    required: ['id', 'email', 'role'],
+    properties: {
+      id: { type: 'string' },
+      email: { type: 'string' },
+      role: { type: 'string', enum: ['user', 'admin'] },
+    },
   }
   schemas.TokenPair = {
     type: 'object',

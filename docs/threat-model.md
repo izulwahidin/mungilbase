@@ -105,8 +105,9 @@ launch; **out** = deliberately not handled.
 
 | Threat | Status | Mitigation |
 |---|---|---|
-| Admin role spoofing | planned | Roles from a closed enum, exact match, never substring matching |
-| Admin token leaking into user context | planned | Separate signing key; admin sessions rejected on user routes |
+| Admin role spoofing | done | Roles are a closed enum (`user`, `admin`) stored in the users table, read per request, exact match only. There is no role claim to forge |
+| Implicit admin bypass | done | `auth.adminBypassRules` defaults to false; promotion alone never disables rules |
+| Admin actions unaudited | partial | Admin CRUD writes are not separately attributed yet; the admin UI work adds an audit event per write |
 | Extension/config escape hatch | out | There is no plugin system in v0.1, by design |
 
 ## Out of scope for v0.1

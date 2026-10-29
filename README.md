@@ -124,6 +124,15 @@ only; refuses to start under `NODE_ENV=production`) or `smtp`. Tokens are
 hashed at rest, single-use, 30 minutes by default, and a reset revokes every
 session for the account.
 
+Users have a closed role: `user` or `admin`. Promotion alone does **not**
+bypass table rules; set `auth.adminBypassRules: true` if admins should see and
+write everything. Roles are read from the database on every request, so a
+change applies to already-issued tokens immediately.
+
+```bash
+npm run user:role -- me@example.com admin
+```
+
 ### Generated API spec
 
 `GET /api/v1/openapi.json` returns an OpenAPI 3.1 document generated from the
@@ -181,7 +190,7 @@ export default {
   allowedOrigins: [],                 // extra browser origins; empty = same-origin only
   database: { file: './data/mungil.db' },
   server: { host: '0.0.0.0', port: 8787, maxConcurrency: 64 },
-  auth: { allowSignup: false },       // omit to disable /api/v1/auth entirely
+  auth: { allowSignup: false, adminBypassRules: false }, // omit auth to disable it
   // Optional. Enables password reset emails; password comes from MUNGIL_SMTP_PASSWORD.
   // email: { provider: 'smtp', from: 'noreply@example.com', smtp: { host: 'localhost', user: 'mailer' } },
   tables: [{

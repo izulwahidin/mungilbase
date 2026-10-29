@@ -87,7 +87,7 @@ describe('auth routes', () => {
 
     const me = await request('/api/v1/auth/me', { headers: auth(session.tokens.accessToken) })
     expect(me.status).toBe(200)
-    expect(await me.json()).toEqual({ id: session.user.id, email: 'one@example.com' })
+    expect(await me.json()).toEqual({ id: session.user.id, email: 'one@example.com', role: 'user' })
 
     expect((await request('/api/v1/auth/me')).status).toBe(401)
     expect(

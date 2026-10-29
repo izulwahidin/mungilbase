@@ -54,6 +54,11 @@ export const authConfigSchema = z
   .object({
     /** Registration endpoint is closed unless this is true. */
     allowSignup: z.boolean().default(false),
+    /**
+     * When true, users with the `admin` role skip table rules entirely.
+     * Defaults to false: promotion alone is not an implicit bypass.
+     */
+    adminBypassRules: z.boolean().default(false),
     minPasswordLength: z.number().int().min(8).max(128).default(10),
     accessTokenTtlSeconds: z.number().int().min(60).max(86_400).default(900),
     refreshTokenTtlSeconds: z.number().int().min(3_600).max(31_536_000).default(2_592_000),

@@ -60,7 +60,13 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       const token = bearerToken(c.req.header('authorization'))
       if (!token) return anonymous
       const session = authService.resolveAccessToken(token)
-      return session ? { uid: session.userId, sessionId: session.sessionId } : anonymous
+      if (!session) return anonymous
+      return {
+        uid: session.userId,
+        sessionId: session.sessionId,
+        role: session.role,
+        admin: session.role === 'admin' && (deps.config.auth?.adminBypassRules ?? false),
+      }
     })
 
   app.use('*', requestId())

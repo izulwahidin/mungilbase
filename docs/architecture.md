@@ -107,6 +107,10 @@ between `403` and `404`.
   depend on whether the address exists or the mail server is up.
 - **Reset links** are built from `auth.passwordReset.resetUrl` or
   `${appUrl}/reset-password`; boot fails if neither exists.
+- **Roles** are `user` or `admin`, stored on the users row and joined on every
+  access-token lookup. Promotion takes effect on the next request. Admin bypass
+  is a separate config flag (`adminBypassRules`), never an implication of the
+  role.
 
 ## Audit
 

@@ -19,6 +19,7 @@ export function ensureAuthSchema(db: Db): void {
       "id" TEXT PRIMARY KEY NOT NULL,
       "email" TEXT NOT NULL UNIQUE,
       "password_hash" TEXT NOT NULL,
+      "role" TEXT NOT NULL DEFAULT 'user' CHECK ("role" IN ('user', 'admin')),
       "created_at" TEXT NOT NULL,
       "updated_at" TEXT NOT NULL
     );
@@ -63,6 +64,17 @@ export function ensureAuthSchema(db: Db): void {
       "count" INTEGER NOT NULL
     );
   `)
+
+  // 0.1.x databases predate roles. Additive, like table schema sync.
+  const userColumns = db.prepare(`PRAGMA table_info("${AUTH_TABLES.users}")`).all() as {
+    name: string
+  }[]
+  if (!userColumns.some((column) => column.name === 'role')) {
+    db.exec(
+      `ALTER TABLE "${AUTH_TABLES.users}"
+       ADD COLUMN "role" TEXT NOT NULL DEFAULT 'user' CHECK ("role" IN ('user', 'admin'))`,
+    )
+  }
 }
 
 /**

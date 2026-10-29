@@ -302,6 +302,21 @@ written as arrays. Removing an index from the config is refused at startup
 
 ---
 
+## Roles
+
+```bash
+npm run user:role -- user@example.com admin
+npm run user:role -- user@example.com user
+```
+
+The change is effective on the next request; existing tokens pick up the new
+role because it is read from the database, not embedded in the token.
+
+Promotion alone does **not** bypass table rules. If your admin UI needs to see
+and edit every row, set `auth.adminBypassRules: true` and understand the
+trade-off: any admin token can then read and write everything, and admin writes
+are not yet separately audited.
+
 ## Security operations
 
 - Tokens are opaque and stored hashed; there is no signing key to rotate.
