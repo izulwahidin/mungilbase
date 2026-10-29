@@ -43,10 +43,20 @@ Apply migrations and sync the schema:
 npm run migrate   # checksummed migrations + additive schema sync
 ```
 
-Create an account (signup is closed by default):
+Create an account (signup is closed by default), and reset one if someone is
+locked out (this also revokes all of their sessions):
 
 ```bash
 MUNGIL_USER_PASSWORD='correct horse battery' npm run user:create -- me@example.com
+MUNGIL_USER_PASSWORD='a different long password' npm run user:passwd -- me@example.com
+```
+
+Back up, prove the backup works, and take a load baseline:
+
+```bash
+npm run backup -- ./backups
+npm run drill                    # online backup -> verify -> restore -> compare
+npm run bench -- --concurrency 16 --seconds 10
 ```
 
 Log in and use the token (examples assume `jq`):
@@ -199,7 +209,8 @@ anonymous requests rather than an empty result.
       family revocation, logout, per-account and per-IP login throttling
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`
 - [x] Append-only audit log for denials, throttling, 401s, 5xx and auth events
-- [x] Docker image, compose file, CI workflow, threat model
+- [x] Verified online backups + automated restore drill (runs in CI)
+- [x] Docker image, compose file, CI workflow, threat model, runbook
 
 ## Not built yet
 
@@ -219,13 +230,14 @@ A release is not "production-ready" until all of these are true:
 - [x] Rule denials return `403 rule_violation` and are written to the audit log
 - [x] Rule compiler property-tested; no interpolation of values
 - [x] Migrations checksummed, drift-detected, transactional
-- [ ] Backup + **tested** restore documented and exercised
+- [x] Backup + tested restore (`scripts/restore-drill.sh`, run in CI)
 - [ ] Structured logs, request ids, health/version, error tracking
 - [ ] Load test against a realistic dataset; N+1 and index review
 - [ ] Threat model reviewed; external penetration test before public launch
 
-See [docs/threat-model.md](docs/threat-model.md) and
-[docs/architecture.md](docs/architecture.md).
+See [docs/threat-model.md](docs/threat-model.md),
+[docs/architecture.md](docs/architecture.md) and
+[docs/runbook.md](docs/runbook.md) (backups, restore, upgrades, incidents).
 
 ## Deploy (single node)
 
@@ -234,8 +246,10 @@ cp mungil.config.example.json mungil.config.json
 docker compose up -d --build
 ```
 
-SQLite lives in `./data` on the host. For continuous backup, see the Litestream
-block in `docker-compose.yml`.
+SQLite lives in `./data` on the host. Schedule `npm run backup -- /backups`
+and read [docs/runbook.md](docs/runbook.md); for continuous replication use the
+Litestream block in `docker-compose.yml`. Before trusting any backup, run
+`npm run drill`.
 
 ## License
 

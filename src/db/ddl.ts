@@ -91,6 +91,14 @@ export function tableDdl(table: TableConfig): TableDdl {
         `ON ${quote(table.name)} (${quote(field.name)})`,
     )
 
+  // Default listing is newest-first, so this index is on the hot path.
+  if (table.timestamps) {
+    indexes.push(
+      `CREATE INDEX IF NOT EXISTS ${quote(`idx_${table.name}_created_at`)} ` +
+        `ON ${quote(table.name)} (${quote('created_at')})`,
+    )
+  }
+
   return {
     create: `CREATE TABLE ${quote(table.name)} (\n  ${columns.join(',\n  ')}\n)`,
     indexes,
@@ -194,13 +202,9 @@ export function ensureSchema(db: Db, registry: Registry): SchemaResult {
         added.push(field.name)
       }
 
-      // New index for a newly added foreign key (missing field or existing field
-      // whose index was never created).
-      const referenced = new Set(missing.map((field) => field.name))
-      for (const index of ddl.indexes) {
-        const usesNewColumn = [...referenced].some((column) => index.includes(quote(column)))
-        if (usesNewColumn) db.exec(index)
-      }
+      // Idempotent: also backfills indexes for tables created by an older
+      // version, including the default listing index.
+      for (const index of ddl.indexes) db.exec(index)
 
       if (added.length) altered.push({ table: table.name, columns: added })
     }

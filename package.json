@@ -16,6 +16,10 @@
     "test:watch": "vitest",
     "migrate": "tsx src/cli/migrate.ts",
     "user:create": "tsx src/cli/create-user.ts",
+    "user:passwd": "tsx src/cli/reset-password.ts",
+    "backup": "tsx src/cli/backup.ts",
+    "drill": "bash scripts/restore-drill.sh",
+    "bench": "tsx scripts/bench.ts",
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

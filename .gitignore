@@ -14,3 +14,8 @@ data/
 
 # Local deployment config generated from the example
 mungil.config.json
+
+# Local artifacts
+.drill/
+backups/
+bench.config.json

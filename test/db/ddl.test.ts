@@ -54,6 +54,7 @@ describe('tableDdl', () => {
     expect(ddl.create).toContain('CHECK ("meta" IS NULL OR json_valid("meta"))')
     expect(ddl.indexes).toEqual([
       'CREATE INDEX IF NOT EXISTS "idx_posts_author_id" ON "posts" ("author_id")',
+      'CREATE INDEX IF NOT EXISTS "idx_posts_created_at" ON "posts" ("created_at")',
     ])
   })
 
@@ -77,7 +78,22 @@ describe('ensureSchema', () => {
     const indexes = db
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts'`)
       .all() as { name: string }[]
-    expect(indexes.map((index) => index.name)).toContain('idx_posts_author_id')
+    expect(indexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining(['idx_posts_author_id', 'idx_posts_created_at']),
+    )
+    db.close()
+  })
+
+  it('backfills indexes for tables created by an older version', () => {
+    const db = openDatabase(':memory:')
+    sync(db, configWith(basePosts))
+    db.exec(`DROP INDEX "idx_posts_created_at"`)
+
+    expect(sync(db, configWith(basePosts))).toEqual({ created: [], altered: [] })
+    const indexes = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts'`)
+      .all() as { name: string }[]
+    expect(indexes.map((index) => index.name)).toContain('idx_posts_created_at')
     db.close()
   })
 

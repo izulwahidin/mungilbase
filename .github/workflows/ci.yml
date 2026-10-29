@@ -25,6 +25,9 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      - name: Backup + restore drill
+        run: bash scripts/restore-drill.sh
+
       - name: Dependency audit
         run: npm audit --audit-level=high
         continue-on-error: true

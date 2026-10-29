@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Db } from '../db/connect.js'
 import { transaction } from '../db/tx.js'
 import type { AuthConfig } from '../config/schema.js'
-import { badRequest, conflict, forbidden, unauthorized } from '../http/errors.js'
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../http/errors.js'
 import { hashPassword, verifyDummyPassword, verifyPassword } from './password.js'
 import { createToken, hashToken, isWellFormedToken } from './tokens.js'
 import { AUTH_TABLES, cleanupAuth } from './schema.js'
@@ -115,6 +115,47 @@ export class AuthService {
     }
 
     return { id, email }
+  }
+
+  /**
+   * Operator-only password change. Revokes every session for the account, so
+   * a reset cannot leave an attacker's session alive.
+   */
+  async setPassword(email: string, password: string): Promise<AuthUser> {
+    const normalized = normalizeEmail(email)
+    this.validateNewPassword(password)
+
+    const row = this.db
+      .prepare(`SELECT "id" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .get(normalized) as { id: string } | undefined
+    if (!row) throw notFound('No account with that email')
+
+    const passwordHash = await hashPassword(password)
+    const now = this.now().toISOString()
+
+    transaction(this.db, () => {
+      this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.users}" SET "password_hash" = ?, "updated_at" = ? WHERE "id" = ?`,
+        )
+        .run(passwordHash, now, row.id)
+
+      this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.sessions}" SET "revoked_at" = ?
+           WHERE "user_id" = ? AND "revoked_at" IS NULL`,
+        )
+        .run(now, row.id)
+
+      this.db
+        .prepare(
+          `DELETE FROM "${AUTH_TABLES.tokens}"
+           WHERE "session_id" IN (SELECT "id" FROM "${AUTH_TABLES.sessions}" WHERE "user_id" = ?)`,
+        )
+        .run(row.id)
+    })
+
+    return { id: row.id, email: normalized }
   }
 
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {

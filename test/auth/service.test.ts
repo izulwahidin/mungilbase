@@ -217,6 +217,36 @@ describe('refresh rotation', () => {
   })
 })
 
+describe('password reset', () => {
+  it('changes the password and revokes every session', async () => {
+    const first = await registered()
+    const second = await service.login({ email, password }, { ip: null })
+
+    const updated = await service.setPassword(email, 'another good password')
+    expect(updated.email).toBe(email)
+
+    expect(service.resolveAccessToken(first.tokens.accessToken)).toBeNull()
+    expect(service.resolveAccessToken(second.tokens.accessToken)).toBeNull()
+
+    const oldPassword = await appErrorAsync(() => service.login({ email, password }, { ip: null }))
+    expect(oldPassword.statusCode).toBe(401)
+
+    const relogin = await service.login({ email, password: 'another good password' }, { ip: null })
+    expect(service.resolveAccessToken(relogin.tokens.accessToken)).not.toBeNull()
+  })
+
+  it('rejects unknown emails and short passwords', async () => {
+    await registered()
+    const unknown = await appErrorAsync(() =>
+      service.setPassword('ghost@example.com', 'another good password'),
+    )
+    expect(unknown.statusCode).toBe(404)
+
+    const short = await appErrorAsync(() => service.setPassword(email, 'short'))
+    expect(short.statusCode).toBe(400)
+  })
+})
+
 describe('logout', () => {
   it('revokes the session and is idempotent', async () => {
     const { tokens } = await registered()
