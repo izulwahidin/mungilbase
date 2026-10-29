@@ -1,0 +1,13 @@
+MungilBase
+Copyright 2026 MungilBase contributors
+
+This project is an independent implementation. Its architecture was inspired by
+Teenybase (https://github.com/teenybase/teenybase), which is licensed under the
+Apache License 2.0.
+
+No source code from Teenybase is included in this repository. Where ideas,
+interfaces, or documentation were studied, they were reimplemented from scratch.
+If code is ever copied from Teenybase or another Apache-2.0 project, the source
+and its NOTICE must be recorded here and in the file header.
+
+Third-party dependencies retain their own licenses. See package.json.

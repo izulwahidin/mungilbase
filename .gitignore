@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.litestream/
+
+# Local deployment config generated from the example
+mungil.config.json

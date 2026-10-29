@@ -1,0 +1,28 @@
+{
+  "appUrl": "https://api.example.com",
+  "allowedOrigins": [],
+  "database": { "file": "/data/mungil.db" },
+  "server": { "host": "0.0.0.0", "port": 8787 },
+  "logLevel": "info",
+  "auth": {
+    "allowSignup": false
+  },
+  "tables": [
+    {
+      "name": "posts",
+      "fields": [
+        { "name": "author_id", "type": "text", "required": true },
+        { "name": "title", "type": "text", "required": true },
+        { "name": "body", "type": "text" },
+        { "name": "published", "type": "boolean", "default": false }
+      ],
+      "rules": {
+        "list": "published == true | auth.uid == author_id",
+        "view": "published == true | auth.uid == author_id",
+        "create": "auth.uid != null & author_id == auth.uid",
+        "update": "auth.uid == author_id",
+        "delete": "auth.uid == author_id"
+      }
+    }
+  ]
+}

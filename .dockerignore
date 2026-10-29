@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+data
+.git
+.github
+*.md
+!README.md
+.env
+.env.*
+mungil.config.json
+litestream.yml
+docker-compose.yml
