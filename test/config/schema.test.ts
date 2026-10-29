@@ -116,6 +116,51 @@ describe('config schema', () => {
     ).toBe(false)
   })
 
+  it('validates email verification settings', () => {
+    const base = {
+      appUrl: 'http://localhost:8787',
+      auth: { allowSignup: true, emailVerification: { enabled: true } },
+      email: { provider: 'log', from: 'noreply@example.com' },
+      tables: [],
+    }
+
+    expect(configSchema.parse(base).auth?.emailVerification).toEqual({
+      enabled: true,
+      required: false,
+      tokenTtlSeconds: 86_400,
+      maxRequestsPerHour: 3,
+    })
+
+    // Requires an email provider and a link target.
+    expect(
+      configSchema.safeParse({
+        appUrl: 'http://localhost:8787',
+        auth: { allowSignup: true, emailVerification: { enabled: true } },
+        tables: [],
+      }).success,
+    ).toBe(false)
+
+    expect(
+      configSchema.safeParse({
+        auth: { allowSignup: true, emailVerification: { enabled: true } },
+        email: { provider: 'log', from: 'noreply@example.com' },
+        tables: [],
+      }).success,
+    ).toBe(false)
+
+    expect(
+      configSchema.safeParse({
+        ...base,
+        appUrl: undefined,
+        auth: {
+          allowSignup: true,
+          passwordReset: { enabled: false },
+          emailVerification: { enabled: true, verifyUrl: 'https://app.example.com/verify' },
+        },
+      }).success,
+    ).toBe(true)
+  })
+
   it('validates file fields and storage settings', () => {
     const parsed = configSchema.parse({
       tables: [{ ...baseTable, fields: [{ name: 'upload', type: 'file' }] }],

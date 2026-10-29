@@ -19,10 +19,10 @@ export interface ColumnNode {
   name: string
 }
 
-/** Only `auth.uid` exists in v0.1. Roles arrive with the auth module. */
+/** Fields of the authenticated principal a rule may reference. */
 export interface AuthNode {
   kind: 'auth'
-  path: 'uid'
+  path: 'uid' | 'verified'
 }
 
 export interface UnaryNode {

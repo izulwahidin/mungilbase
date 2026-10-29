@@ -113,6 +113,10 @@ between `403` and `404`.
   access-token lookup. Promotion takes effect on the next request. Admin bypass
   is a separate config flag (`adminBypassRules`), never an implication of the
   role.
+- **Email verification** stores `email_verified` on the user and single-use
+  hashed tokens in `_mungil_email_verifications`. When `required` is set, login
+  refuses unverified accounts after the password check. Rules can use
+  `auth.verified` without another join.
 
 ## Audit
 

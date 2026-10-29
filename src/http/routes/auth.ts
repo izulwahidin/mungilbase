@@ -26,6 +26,8 @@ const resetPasswordSchema = z
   .object({ token: z.string().min(1).max(256), password: z.string().min(1).max(1024) })
   .strict()
 
+const verifyEmailSchema = z.object({ token: z.string().min(1).max(256) }).strict()
+
 export interface AuthRoutesDeps {
   service: AuthService
   db: Db
@@ -40,9 +42,22 @@ export function registerAuthRoutes(app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
     passwordReset?.resetUrl ??
     (deps.config.appUrl ? `${deps.config.appUrl.replace(/\/+$/, '')}/reset-password` : null)
 
+  const emailVerification = deps.config.auth?.emailVerification
+  const verifyUrl =
+    emailVerification?.verifyUrl ??
+    (deps.config.appUrl ? `${deps.config.appUrl.replace(/\/+$/, '')}/verify-email` : null)
+
   app.post('/api/v1/auth/register', async (c) => {
     const credentials = parse(credentialsSchema, await readJson(c))
     const result = await deps.service.register(credentials, { ip: clientIp(c) })
+
+    if (emailVerification?.enabled && mailer && verifyUrl) {
+      await deps.service.requestEmailVerification(result.user.id, mailer, {
+        verifyUrl,
+        ttlSeconds: emailVerification.tokenTtlSeconds,
+      })
+    }
+
     recordAudit(deps.db, {
       event: 'auth.register',
       outcome: 'success',
@@ -108,6 +123,48 @@ export function registerAuthRoutes(app: Hono<AppEnv>, deps: AuthRoutesDeps): voi
       })
 
       return c.json({ status: 'ok' })
+    })
+  }
+
+  if (emailVerification?.enabled && mailer && verifyUrl) {
+    app.post('/api/v1/auth/verify-email', async (c) => {
+      const body = parse(verifyEmailSchema, await readJson(c))
+      const user = deps.service.verifyEmail(body.token)
+
+      recordAudit(deps.db, {
+        event: 'auth.email_verified',
+        outcome: 'success',
+        requestId: c.get('requestId'),
+        userId: user.id,
+      })
+
+      return c.json({ status: 'ok' })
+    })
+
+    app.post('/api/v1/auth/resend-verification', async (c) => {
+      const { uid } = c.get('auth')
+      if (!uid) throw unauthorized()
+
+      const result = await deps.service.resendEmailVerification(
+        uid,
+        { ip: clientIp(c) },
+        mailer,
+        {
+          verifyUrl,
+          ttlSeconds: emailVerification.tokenTtlSeconds,
+          maxRequestsPerHour: emailVerification.maxRequestsPerHour,
+        },
+      )
+
+      recordAudit(deps.db, {
+        event: 'auth.verification_sent',
+        outcome: 'success',
+        requestId: c.get('requestId'),
+        userId: uid,
+        metadata: { sent: result.sent },
+      })
+
+      return c.json({ status: 'accepted' }, 202)
     })
   }
 

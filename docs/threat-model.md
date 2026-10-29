@@ -56,6 +56,8 @@ launch; **out** = deliberately not handled.
 | Bearer token in URL | done | Tokens accepted only from the `Authorization` header |
 | Password reset token theft | done | 256-bit tokens hashed at rest, single-use, 30 min default TTL, replaced on re-request, reset revokes all sessions |
 | Reset link leaking through logs | done | The `log` email provider is refused when `NODE_ENV=production` |
+| Unverified addresses used for access | done (opt-in) | `emailVerification.required` blocks login with `403 email_not_verified`; `auth.verified` is available to rules |
+| Email verification token theft | done | 256-bit hashed, single-use, 24-hour default TTL, replaced on resend |
 
 ### Tampering
 

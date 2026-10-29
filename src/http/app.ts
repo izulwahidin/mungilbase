@@ -72,6 +72,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
         uid: session.userId,
         sessionId: session.sessionId,
         role: session.role,
+        verified: session.emailVerified,
         admin: session.role === 'admin' && (deps.config.auth?.adminBypassRules ?? false),
       }
     })

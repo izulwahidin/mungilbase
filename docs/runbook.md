@@ -207,6 +207,20 @@ named by `email.smtp.passwordEnv` (default `MUNGIL_SMTP_PASSWORD`). The `log`
 provider is refused when `NODE_ENV=production`, because it would write reset
 links into the log stream.
 
+### Email verification
+
+Enable with `auth.emailVerification.enabled: true`. Registration then sends a
+link; `required: true` rejects logins with `403 email_not_verified` until the
+address is confirmed. Tokens are hashed, single-use and expire after 24 hours.
+`resend-verification` requires a session and is throttled.
+
+Accounts created with `npm run user:create` are verified by default. To audit
+unverified accounts:
+
+```sql
+SELECT "email", "created_at" FROM "_mungil_auth_users" WHERE "email_verified" = 0;
+```
+
 ### Suspected stolen session token
 
 `user:passwd` revokes all sessions for the account. To revoke without changing

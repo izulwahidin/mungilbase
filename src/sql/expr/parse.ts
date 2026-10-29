@@ -95,10 +95,12 @@ function normalize(node: JsepNode, depth: number): ExpressionNode {
       if (object?.type !== 'Identifier' || object.name !== 'auth') {
         throw new RuleError('Only auth.* references are supported on the right of a dot')
       }
-      if (property?.type !== 'Identifier' || property.name !== 'uid') {
-        throw new RuleError(`Unsupported auth field "${String(property?.name)}"; only auth.uid is available`)
+      if (property?.type !== 'Identifier' || (property.name !== 'uid' && property.name !== 'verified')) {
+        throw new RuleError(
+          `Unsupported auth field "${String(property?.name)}"; only auth.uid and auth.verified are available`,
+        )
       }
-      return { kind: 'auth', path: 'uid' }
+      return { kind: 'auth', path: property.name }
     }
 
     case 'UnaryExpression': {

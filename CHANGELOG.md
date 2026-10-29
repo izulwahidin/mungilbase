@@ -24,6 +24,9 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
   and `file.upload` audit events.
 - Optional Sentry-compatible error reporting via `MUNGIL_SENTRY_DSN`, covering
   request errors and uncaught process exceptions.
+- Email verification: hashed single-use tokens, optional `required` login gate,
+  resend endpoint with throttling, `auth.verified` exposed to rules, and
+  verification links delivered through the existing mailer.
 
 ## [0.1.0] — 2026-10-29
 

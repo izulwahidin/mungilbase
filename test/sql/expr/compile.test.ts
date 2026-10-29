@@ -49,6 +49,17 @@ describe('compileRule', () => {
     })
   })
 
+  it('binds auth.verified as a boolean parameter', () => {
+    expect(
+      compileRule('auth.verified == true', { ...context, auth: { uid: 'u1', verified: true } }),
+    ).toEqual({ sql: '(? IS ?)', params: [true, true] })
+
+    expect(compileRule('auth.verified == true', context)).toEqual({
+      sql: '(? IS ?)',
+      params: [false, true],
+    })
+  })
+
   it('renders bare booleans as constants', () => {
     expect(compileRule('true', context)).toEqual({ sql: '1', params: [] })
     expect(compileRule('false', context)).toEqual({ sql: '0', params: [] })

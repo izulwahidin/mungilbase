@@ -104,6 +104,18 @@ export const authConfigSchema = z
       })
       .strict()
       .default({}),
+    emailVerification: z
+      .object({
+        enabled: z.boolean().default(false),
+        /** Reject logins until the address is verified. */
+        required: z.boolean().default(false),
+        tokenTtlSeconds: z.number().int().min(300).max(604_800).default(86_400),
+        maxRequestsPerHour: z.number().int().min(1).max(100).default(3),
+        /** Frontend URL that receives `?token=…`. Defaults to `${appUrl}/verify-email`. */
+        verifyUrl: z.string().url().optional(),
+      })
+      .strict()
+      .default({}),
   })
   .strict()
 
@@ -295,6 +307,23 @@ export const configSchema = z
           code: z.ZodIssueCode.custom,
           path: ['appUrl'],
           message: 'Password reset needs appUrl or auth.passwordReset.resetUrl to build the link',
+        })
+      }
+    }
+
+    if (config.auth?.emailVerification.enabled) {
+      if (!config.email) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['email'],
+          message: 'Email verification requires an email provider',
+        })
+      }
+      if (!config.appUrl && !config.auth.emailVerification.verifyUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['appUrl'],
+          message: 'Email verification needs appUrl or auth.emailVerification.verifyUrl',
         })
       }
     }

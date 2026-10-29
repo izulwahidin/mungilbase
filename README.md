@@ -106,6 +106,8 @@ Registered only when the config has an `auth` block.
 | `POST` | `/api/v1/auth/refresh` | rotates access **and** refresh tokens |
 | `POST` | `/api/v1/auth/request-password-reset` | `202` always; needs `email` config |
 | `POST` | `/api/v1/auth/reset-password` | consumes a single-use token, revokes sessions |
+| `POST` | `/api/v1/auth/verify-email` | consumes a single-use verification token |
+| `POST` | `/api/v1/auth/resend-verification` | authenticated, throttled; needs `emailVerification` |
 | `POST` | `/api/v1/auth/logout` | `204`, revokes the session |
 | `GET` | `/api/v1/auth/me` | current user; `401` without a token |
 
@@ -138,6 +140,11 @@ Password reset is enabled only when `email` is configured and `appUrl` or
 only; refuses to start under `NODE_ENV=production`) or `smtp`. Tokens are
 hashed at rest, single-use, 30 minutes by default, and a reset revokes every
 session for the account.
+
+Email verification is off by default. Set `auth.emailVerification.enabled` to
+send a link on registration, and `required: true` to reject logins until the
+address is verified. Resending needs a session and is throttled. Accounts
+created with `user:create` start verified, since the operator vouched for them.
 
 Users have a closed role: `user` or `admin`. Promotion alone does **not**
 bypass table rules; set `auth.adminBypassRules: true` if admins should see and
@@ -255,7 +262,7 @@ SQL with bound parameters, and never string-concatenated with values.
 | | |
 |---|---|
 | Values | `'text'`, `42`, `1.5`, `true`, `false`, `null` |
-| Auth | `auth.uid` (the signed-in user's id, or `null`) |
+| Auth | `auth.uid` (the signed-in user's id, or `null`), `auth.verified` (boolean) |
 | Columns | bare names: `owner_id`, `published` |
 | Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` (null-safe) |
 | Logic | `&` (AND), `\|` (OR), `!` (NOT) |

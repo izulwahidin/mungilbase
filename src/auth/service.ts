@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto'
 import type { Db } from '../db/connect.js'
 import { transaction } from '../db/tx.js'
 import type { AuthConfig } from '../config/schema.js'
-import { badRequest, conflict, forbidden, notFound, unauthorized } from '../http/errors.js'
+import {
+  badRequest,
+  conflict,
+  emailNotVerified,
+  forbidden,
+  notFound,
+  unauthorized,
+} from '../http/errors.js'
 import { hashPassword, verifyDummyPassword, verifyPassword } from './password.js'
 import { createToken, hashToken, isWellFormedToken } from './tokens.js'
 import { AUTH_TABLES, cleanupAuth } from './schema.js'
@@ -14,6 +21,7 @@ export interface AuthUser {
   id: string
   email: string
   role: AuthRole
+  emailVerified: boolean
 }
 
 export interface TokenPair {
@@ -32,6 +40,7 @@ export interface SessionInfo {
   userId: string
   sessionId: string
   role: AuthRole
+  emailVerified: boolean
 }
 
 export interface Credentials {
@@ -60,11 +69,22 @@ export interface PasswordResetRequestResult {
   userId: string | null
 }
 
+export interface EmailVerificationOptions {
+  verifyUrl: string
+  ttlSeconds: number
+}
+
+export interface EmailVerificationResult {
+  sent: boolean
+  userId: string | null
+}
+
 interface UserRow {
   id: string
   email: string
   password_hash: string
   role: AuthRole
+  email_verified: number
 }
 
 interface RefreshRow {
@@ -73,6 +93,7 @@ interface RefreshRow {
   familyId: string
   email: string
   role: AuthRole
+  email_verified: number
   usedAt: string | null
   revokedAt: string | null
   tokenExpiresAt: string
@@ -104,7 +125,7 @@ export class AuthService {
   async register(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
     if (!this.config.allowSignup) throw forbidden('Signup is disabled')
     this.checkIpThrottle(meta.ip)
-    const user = await this.createUser(input)
+    const user = await this.createUser(input, 'user', false)
     return this.createSession(user)
   }
 
@@ -112,7 +133,11 @@ export class AuthService {
    * Creates an account without opening the signup route. Used by the
    * `user:create` CLI so a closed-signup deployment can still bootstrap.
    */
-  async createUser(input: Credentials, role: AuthRole = 'user'): Promise<AuthUser> {
+  async createUser(
+    input: Credentials,
+    role: AuthRole = 'user',
+    emailVerified = true,
+  ): Promise<AuthUser> {
     if (!isAuthRole(role)) throw badRequest(`Unknown role "${String(role)}"`)
 
     const email = normalizeEmail(input.email)
@@ -126,16 +151,16 @@ export class AuthService {
       this.db
         .prepare(
           `INSERT INTO "${AUTH_TABLES.users}"
-             ("id", "email", "password_hash", "role", "created_at", "updated_at")
-           VALUES (?, ?, ?, ?, ?, ?)`,
+             ("id", "email", "password_hash", "role", "email_verified", "created_at", "updated_at")
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, email, passwordHash, role, timestamp, timestamp)
+        .run(id, email, passwordHash, role, emailVerified ? 1 : 0, timestamp, timestamp)
     } catch (error) {
       if (isUniqueViolation(error)) throw conflict('An account with that email already exists')
       throw error
     }
 
-    return { id, email, role }
+    return { id, email, role, emailVerified }
   }
 
   /**
@@ -147,8 +172,8 @@ export class AuthService {
     this.validateNewPassword(password)
 
     const row = this.db
-      .prepare(`SELECT "id", "role" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
-      .get(normalized) as { id: string; role: AuthRole } | undefined
+      .prepare(`SELECT "id", "role", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .get(normalized) as { id: string; role: AuthRole; email_verified: number } | undefined
     if (!row) throw notFound('No account with that email')
 
     const passwordHash = await hashPassword(password)
@@ -176,7 +201,7 @@ export class AuthService {
         .run(row.id)
     })
 
-    return { id: row.id, email: normalized, role: row.role }
+    return { id: row.id, email: normalized, role: row.role, emailVerified: row.email_verified === 1 }
   }
 
   /**
@@ -263,13 +288,21 @@ export class AuthService {
     const row = this.db
       .prepare(
         `SELECT r."user_id" AS "userId", r."expires_at" AS "expiresAt",
-                r."used_at" AS "usedAt", u."email" AS "email", u."role" AS "role"
+                r."used_at" AS "usedAt", u."email" AS "email", u."role" AS "role",
+                u."email_verified" AS "email_verified"
          FROM "${AUTH_TABLES.resets}" r
          JOIN "${AUTH_TABLES.users}" u ON u."id" = r."user_id"
          WHERE r."token_hash" = ?`,
       )
       .get(hashed) as
-      | { userId: string; expiresAt: string; usedAt: string | null; email: string; role: AuthRole }
+      | {
+          userId: string
+          expiresAt: string
+          usedAt: string | null
+          email: string
+          role: AuthRole
+          email_verified: number
+        }
       | undefined
 
     if (!row || row.usedAt !== null || row.expiresAt <= now.toISOString()) {
@@ -311,7 +344,12 @@ export class AuthService {
         .prepare(`UPDATE "${AUTH_TABLES.resets}" SET "used_at" = ? WHERE "user_id" = ? AND "used_at" IS NULL`)
         .run(now.toISOString(), row.userId)
 
-      return { id: row.userId, email: row.email, role: row.role }
+      return {
+        id: row.userId,
+        email: row.email,
+        role: row.role,
+        emailVerified: row.email_verified === 1,
+      }
     })
 
     if (!result) throw badRequest('Invalid or expired reset token')
@@ -327,8 +365,8 @@ export class AuthService {
 
     const normalized = normalizeEmail(email)
     const row = this.db
-      .prepare(`SELECT "id", "role" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
-      .get(normalized) as { id: string; role: AuthRole } | undefined
+      .prepare(`SELECT "id", "role", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`)
+      .get(normalized) as { id: string; role: AuthRole; email_verified: number } | undefined
     if (!row) throw notFound('No account with that email')
 
     if (row.role !== role) {
@@ -337,7 +375,7 @@ export class AuthService {
         .run(role, this.now().toISOString(), row.id)
     }
 
-    return { id: row.id, email: normalized, role }
+    return { id: row.id, email: normalized, role, emailVerified: row.email_verified === 1 }
   }
 
   /**
@@ -366,15 +404,18 @@ export class AuthService {
 
     const row = this.db
       .prepare(
-        `SELECT u."id" AS "id", u."email" AS "email", u."role" AS "role"
+        `SELECT u."id" AS "id", u."email" AS "email", u."role" AS "role",
+                u."email_verified" AS "email_verified"
          FROM "${AUTH_TABLES.adminSessions}" s
          JOIN "${AUTH_TABLES.users}" u ON u."id" = s."user_id"
          WHERE s."token_hash" = ? AND s."expires_at" > ? AND s."revoked_at" IS NULL`,
       )
-      .get(hashToken(token), this.now().toISOString()) as AuthUser | undefined
+      .get(hashToken(token), this.now().toISOString()) as
+      | { id: string; email: string; role: AuthRole; email_verified: number }
+      | undefined
 
     if (!row || row.role !== 'admin') return null
-    return row
+    return toAuthUser(row)
   }
 
   revokeAdminSession(token: string): void {
@@ -388,6 +429,146 @@ export class AuthService {
       .run(this.now().toISOString(), hashToken(token))
   }
 
+  /**
+   * Creates and sends a verification link. Unknown or already-verified
+   * accounts return `sent: false` without revealing which case it was.
+   */
+  async requestEmailVerification(
+    userId: string,
+    mailer: Mailer,
+    options: EmailVerificationOptions,
+  ): Promise<EmailVerificationResult> {
+    const user = this.db
+      .prepare(
+        `SELECT "id", "email", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "id" = ?`,
+      )
+      .get(userId) as { id: string; email: string; email_verified: number } | undefined
+
+    if (!user || user.email_verified === 1) return { sent: false, userId: user?.id ?? null }
+
+    const now = this.now()
+    const token = createToken()
+    const expiresAt = new Date(now.getTime() + options.ttlSeconds * 1000).toISOString()
+
+    transaction(this.db, () => {
+      this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.verifications}" SET "used_at" = ?
+           WHERE "user_id" = ? AND "used_at" IS NULL`,
+        )
+        .run(now.toISOString(), user.id)
+      this.db
+        .prepare(
+          `INSERT INTO "${AUTH_TABLES.verifications}" ("token_hash", "user_id", "created_at", "expires_at")
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(hashToken(token), user.id, now.toISOString(), expiresAt)
+    })
+
+    try {
+      await mailer.send({
+        to: user.email,
+        subject: 'Verify your MungilBase email',
+        text:
+          'Confirm this address to finish setting up your account.\n\n' +
+          `${withToken(options.verifyUrl, token)}\n\n` +
+          `This link expires in ${Math.round(options.ttlSeconds / 3600)} hours. ` +
+          'If you did not create an account, ignore this email.',
+      })
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          event: 'email_verification_failed',
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
+    }
+
+    return { sent: true, userId: user.id }
+  }
+
+  async resendEmailVerification(
+    userId: string,
+    meta: RequestMeta,
+    mailer: Mailer,
+    options: EmailVerificationOptions & { maxRequestsPerHour: number },
+  ): Promise<EmailVerificationResult> {
+    const now = this.now()
+    checkThrottle(
+      this.db,
+      `verify:${userId}`,
+      { maxAttempts: options.maxRequestsPerHour, windowSeconds: 3_600 },
+      now.getTime(),
+    )
+    if (meta.ip) {
+      checkThrottle(
+        this.db,
+        `verify-ip:${meta.ip}`,
+        { maxAttempts: options.maxRequestsPerHour * 5, windowSeconds: 3_600 },
+        now.getTime(),
+      )
+    }
+
+    return this.requestEmailVerification(userId, mailer, options)
+  }
+
+  verifyEmail(token: string): AuthUser {
+    if (!isWellFormedToken(token)) throw badRequest('Invalid or expired verification token')
+
+    const hashed = hashToken(token)
+    const now = this.now()
+    const row = this.db
+      .prepare(
+        `SELECT v."user_id" AS "userId", v."expires_at" AS "expiresAt",
+                v."used_at" AS "usedAt", u."email" AS "email", u."role" AS "role",
+                u."email_verified" AS "email_verified"
+         FROM "${AUTH_TABLES.verifications}" v
+         JOIN "${AUTH_TABLES.users}" u ON u."id" = v."user_id"
+         WHERE v."token_hash" = ?`,
+      )
+      .get(hashed) as
+      | {
+          userId: string
+          expiresAt: string
+          usedAt: string | null
+          email: string
+          role: AuthRole
+          email_verified: number
+        }
+      | undefined
+
+    if (!row || row.usedAt !== null || row.expiresAt <= now.toISOString()) {
+      throw badRequest('Invalid or expired verification token')
+    }
+
+    transaction(this.db, () => {
+      const consumed = this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.verifications}" SET "used_at" = ?
+           WHERE "token_hash" = ? AND "used_at" IS NULL AND "expires_at" > ?`,
+        )
+        .run(now.toISOString(), hashed, now.toISOString()).changes
+
+      if (consumed !== 1) throw badRequest('Invalid or expired verification token')
+
+      this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.users}" SET "email_verified" = 1, "updated_at" = ? WHERE "id" = ?`,
+        )
+        .run(now.toISOString(), row.userId)
+
+      this.db
+        .prepare(
+          `UPDATE "${AUTH_TABLES.verifications}" SET "used_at" = ?
+           WHERE "user_id" = ? AND "used_at" IS NULL`,
+        )
+        .run(now.toISOString(), row.userId)
+    })
+
+    return { id: row.userId, email: row.email, role: row.role, emailVerified: true }
+  }
+
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
     const email = normalizeEmail(input.email)
     const accountKey = `acct:${email}`
@@ -399,7 +580,8 @@ export class AuthService {
 
     const user = this.db
       .prepare(
-        `SELECT "id", "email", "password_hash", "role" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
+        `SELECT "id", "email", "password_hash", "role", "email_verified"
+         FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
       )
       .get(email) as UserRow | undefined
 
@@ -409,8 +591,12 @@ export class AuthService {
 
     if (!user || !valid) throw unauthorized('Invalid email or password')
 
+    if (this.config.emailVerification.required && user.email_verified !== 1) {
+      throw emailNotVerified()
+    }
+
     clearThrottle(this.db, accountKey)
-    return this.createSession({ id: user.id, email: user.email, role: user.role })
+    return this.createSession(toAuthUser(user))
   }
 
   /**
@@ -437,7 +623,8 @@ export class AuthService {
                   s."expires_at" AS "sessionExpiresAt",
                   s."created_at" AS "sessionCreatedAt",
                   u."email" AS "email",
-                  u."role" AS "role"
+                  u."role" AS "role",
+                  u."email_verified" AS "email_verified"
            FROM "${AUTH_TABLES.tokens}" t
            JOIN "${AUTH_TABLES.sessions}" s ON s."id" = t."session_id"
            JOIN "${AUTH_TABLES.users}" u ON u."id" = s."user_id"
@@ -477,7 +664,12 @@ export class AuthService {
       return {
         ok: true,
         result: {
-          user: { id: row.userId, email: row.email, role: row.role },
+          user: {
+            id: row.userId,
+            email: row.email,
+            role: row.role,
+            emailVerified: row.email_verified === 1,
+          },
           tokens: this.issueTokens(row.sessionId, now, row.sessionExpiresAt),
         },
       }
@@ -516,23 +708,34 @@ export class AuthService {
 
     const row = this.db
       .prepare(
-        `SELECT s."user_id" AS "userId", s."id" AS "sessionId", u."role" AS "role"
+        `SELECT s."user_id" AS "userId", s."id" AS "sessionId",
+                u."role" AS "role", u."email_verified" AS "email_verified"
          FROM "${AUTH_TABLES.tokens}" t
          JOIN "${AUTH_TABLES.sessions}" s ON s."id" = t."session_id"
          JOIN "${AUTH_TABLES.users}" u ON u."id" = s."user_id"
          WHERE t."token_hash" = ? AND t."kind" = 'access'
            AND t."expires_at" > ? AND s."expires_at" > ? AND s."revoked_at" IS NULL`,
       )
-      .get(hashToken(accessToken), now, now) as SessionInfo | undefined
+      .get(hashToken(accessToken), now, now) as
+      | { userId: string; sessionId: string; role: AuthRole; email_verified: number }
+      | undefined
 
-    return row ?? null
+    if (!row) return null
+    return {
+      userId: row.userId,
+      sessionId: row.sessionId,
+      role: row.role,
+      emailVerified: row.email_verified === 1,
+    }
   }
 
   userById(id: string): AuthUser | null {
     const row = this.db
-      .prepare(`SELECT "id", "email", "role" FROM "${AUTH_TABLES.users}" WHERE "id" = ?`)
-      .get(id) as AuthUser | undefined
-    return row ?? null
+      .prepare(
+        `SELECT "id", "email", "role", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "id" = ?`,
+      )
+      .get(id) as { id: string; email: string; role: AuthRole; email_verified: number } | undefined
+    return row ? toAuthUser(row) : null
   }
 
   private createSession(user: AuthUser): AuthSessionResult {
@@ -615,6 +818,15 @@ export function normalizeEmail(value: string): string {
     throw badRequest('Enter a valid email address')
   }
   return email
+}
+
+function toAuthUser(row: {
+  id: string
+  email: string
+  role: AuthRole
+  email_verified: number
+}): AuthUser {
+  return { id: row.id, email: row.email, role: row.role, emailVerified: row.email_verified === 1 }
 }
 
 function withToken(url: string, token: string): string {

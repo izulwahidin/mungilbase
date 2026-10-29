@@ -82,7 +82,12 @@ describe('roles', () => {
     expect(row.role).toBe('user')
 
     const service = new AuthService(legacy, config)
-    expect(service.userById('u1')).toEqual({ id: 'u1', email: 'legacy@example.com', role: 'user' })
+    expect(service.userById('u1')).toEqual({
+      id: 'u1',
+      email: 'legacy@example.com',
+      role: 'user',
+      emailVerified: true,
+    })
     legacy.close()
   })
 })
