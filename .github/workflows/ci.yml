@@ -22,12 +22,10 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
 
-      - name: Backup + restore drill
-        run: bash scripts/restore-drill.sh
+      # Same script developers run locally (`npm run ci`): typecheck, tests,
+      # build, then the backup + restore drill.
+      - run: npm run ci
 
       - name: Dependency audit
         run: npm audit --audit-level=high

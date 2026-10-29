@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# Optional local CI. Enable once per clone:
+#   git config core.hooksPath .githooks
+# Skip a single push with:
+#   SKIP_CI=1 git push
+#
+# This exists because GitHub Actions is not available on every account. It runs
+# exactly what CI runs, so a push cannot bypass the restore drill unnoticed.
+
+set -euo pipefail
+
+if [ "${SKIP_CI:-0}" = "1" ]; then
+  echo "pre-push: SKIP_CI=1, skipping checks"
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+echo "pre-push: running local CI (SKIP_CI=1 to bypass)"
+bash scripts/ci.sh

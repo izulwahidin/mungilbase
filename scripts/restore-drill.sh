@@ -24,6 +24,20 @@ cd "$ROOT"
 DRILL_DIR="$ROOT/.drill"
 KEEP="${KEEP:-0}"
 
+# Under npm on WSL, PATH may not contain a `node` shim even though `node.exe`
+# works. CI on Linux finds plain `node`.
+NODE_BIN="${NODE_BIN:-}"
+if [ -z "$NODE_BIN" ]; then
+  if command -v node >/dev/null 2>&1; then
+    NODE_BIN=node
+  elif command -v node.exe >/dev/null 2>&1; then
+    NODE_BIN=node.exe
+  else
+    echo "node is required to run the drill" >&2
+    exit 1
+  fi
+fi
+
 cleanup() {
   if [ "$KEEP" != "1" ]; then
     rm -rf "$DRILL_DIR"
@@ -72,7 +86,7 @@ write_config "$RESTORED_CONFIG" "$RESTORED"
 
 echo "1/5  creating schema and seed rows"
 npx --no-install tsx src/cli/migrate.ts "$CONFIG" > /dev/null
-node -e '
+"$NODE_BIN" -e '
 const Database = require("better-sqlite3");
 const db = new Database(process.argv[1]);
 const insert = db.prepare(
@@ -90,7 +104,7 @@ cat "$DRILL_DIR/backup.json"
 SNAPSHOT="./.drill/backups/$(ls "$DRILL_DIR"/backups/*.db | head -n 1 | xargs -n 1 basename)"
 
 echo "3/5  verifying the snapshot"
-node -e '
+"$NODE_BIN" -e '
 const Database = require("better-sqlite3");
 const db = new Database(process.argv[1], { readonly: true });
 const integrity = db.prepare("PRAGMA integrity_check").get().integrity_check;
@@ -104,7 +118,7 @@ console.log(`     snapshot ok: ${rows} rows, integrity=${integrity}, fk_violatio
 ' "$SNAPSHOT"
 
 echo "4/5  confirming the source is still writable after the backup"
-node -e '
+"$NODE_BIN" -e '
 const Database = require("better-sqlite3");
 const db = new Database(process.argv[1]);
 const now = new Date().toISOString();
@@ -119,7 +133,7 @@ console.log(`     source writable: ${rows} rows`);
 echo "5/5  restoring the snapshot and re-checking the schema"
 cp "$SNAPSHOT" "$RESTORED"
 npx --no-install tsx src/cli/migrate.ts "$RESTORED_CONFIG" > /dev/null
-node -e '
+"$NODE_BIN" -e '
 const Database = require("better-sqlite3");
 const db = new Database(process.argv[1], { readonly: true });
 const rows = db.prepare("SELECT COUNT(*) AS c FROM \"notes\"").get().c;

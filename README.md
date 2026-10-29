@@ -59,6 +59,13 @@ npm run drill                    # online backup -> verify -> restore -> compare
 npm run bench -- --concurrency 16 --seconds 10
 ```
 
+Run everything CI runs, locally, in one command:
+
+```bash
+npm run ci                      # typecheck, tests, build, restore drill
+git config core.hooksPath .githooks   # optional: enforce it before every push
+```
+
 Log in and use the token (examples assume `jq`):
 
 ```bash
