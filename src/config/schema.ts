@@ -64,6 +64,8 @@ export const authConfigSchema = z
     refreshTokenTtlSeconds: z.number().int().min(3_600).max(31_536_000).default(2_592_000),
     /** Absolute cap on a session's lifetime, even with sliding refreshes. */
     maxSessionTtlSeconds: z.number().int().min(3_600).max(31_536_000).default(7_776_000),
+    /** Lifetime of the server-rendered admin panel cookie. */
+    adminSessionTtlSeconds: z.number().int().min(300).max(604_800).default(28_800),
     throttle: z
       .object({
         account: z

@@ -67,6 +67,8 @@ launch; **out** = deliberately not handled.
 | Rule bypass via update/delete | done | The rule is part of the `WHERE`; `view` decides between `403` and `404`, so there is no existence oracle |
 | Migration drift | done | SHA-256 checksums; unknown or edited migrations abort startup |
 | Malicious config | done (partial) | Strict schema, all five rules required, reference checks |
+| CSRF against the admin panel | done | Double-submit token on every POST, `SameSite=Lax` cookies, no CORS on `/admin` |
+| XSS in the admin panel | done | All rendered values are HTML-escaped; no client-side JS is shipped |
 
 ### Repudiation
 
@@ -107,7 +109,8 @@ launch; **out** = deliberately not handled.
 |---|---|---|
 | Admin role spoofing | done | Roles are a closed enum (`user`, `admin`) stored in the users table, read per request, exact match only. There is no role claim to forge |
 | Implicit admin bypass | done | `auth.adminBypassRules` defaults to false; promotion alone never disables rules |
-| Admin actions unaudited | partial | Admin CRUD writes are not separately attributed yet; the admin UI work adds an audit event per write |
+| Admin actions unaudited | done | `auth.admin_login`, `auth.admin_logout`, `admin.create`, `admin.update`, `admin.delete` are written to `_mungil_audit` |
+| Admin panel cookie theft | partial | HttpOnly + `SameSite=Lax`, `Secure` when `appUrl` is HTTPS, 8-hour lifetime, revocable; no device binding |
 | Extension/config escape hatch | out | There is no plugin system in v0.1, by design |
 
 ## Out of scope for v0.1

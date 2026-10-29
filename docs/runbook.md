@@ -317,6 +317,23 @@ and edit every row, set `auth.adminBypassRules: true` and understand the
 trade-off: any admin token can then read and write everything, and admin writes
 are not yet separately audited.
 
+## Admin panel
+
+Reachable at `https://your-host/admin`. Only `admin` accounts can sign in; the
+panel session is a separate HttpOnly cookie valid for 8 hours
+(`auth.adminSessionTtlSeconds`) and every form has a CSRF token.
+
+- The panel uses the same ruled CRUD layer as the API. If an admin sees nothing
+  in a table, the table rules are hiding rows — enable `adminBypassRules` only
+  if that is the intended trade-off.
+- Set `appUrl` to your HTTPS origin so the admin and CSRF cookies get the
+  `Secure` flag.
+- Admin activity is audited: `auth.admin_login`, `auth.admin_logout`,
+  `admin.create`, `admin.update`, `admin.delete`.
+- Logging out revokes the panel session. Changing the account role takes effect
+  on the next request; demoting an admin invalidates the panel session on its
+  next use.
+
 ## Security operations
 
 - Tokens are opaque and stored hashed; there is no signing key to rotate.

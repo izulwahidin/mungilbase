@@ -18,6 +18,7 @@ import { AppError, unauthorized } from './errors.js'
 import { concurrencyLimit } from './limits.js'
 import { metricsMiddleware } from './metrics.js'
 import { requestId, requestLog } from './middleware.js'
+import { registerAdminRoutes } from './routes/admin.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCrudRoutes } from './routes/crud.js'
 
@@ -121,6 +122,14 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       db: deps.db,
       config: deps.config,
       mailer,
+    })
+  }
+  if (authService && deps.db) {
+    registerAdminRoutes(app, {
+      service: authService,
+      db: deps.db,
+      registry,
+      config: deps.config,
     })
   }
   if (deps.db) registerCrudRoutes(app, { db: deps.db, registry })

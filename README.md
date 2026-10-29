@@ -133,6 +133,16 @@ change applies to already-issued tokens immediately.
 npm run user:role -- me@example.com admin
 ```
 
+### Admin panel
+
+Server-rendered at `/admin`, no build step. Only accounts with the `admin` role
+can sign in. It uses a separate HttpOnly cookie session (8 hours by default),
+CSRF double-submit tokens, and goes through the same CRUD functions as the API —
+there is no second query path. Table rules still apply unless
+`auth.adminBypassRules` is enabled.
+
+It can list, create, edit and delete rows. There is no file upload support yet.
+
 ### Generated API spec
 
 `GET /api/v1/openapi.json` returns an OpenAPI 3.1 document generated from the

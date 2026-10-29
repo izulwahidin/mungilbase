@@ -30,6 +30,7 @@ operate. That is the feature.
 | `src/http/` | Routing, errors, middleware | No SQL strings |
 | `src/auth/` | Argon2id, opaque tokens, sessions, throttling | Owns its internal tables; never interpolates user input into SQL |
 | `src/audit/` | Append-only security events | Never throws; no update/delete path |
+| `src/admin/` | Server-rendered HTML for `/admin` | Every value escaped; no client-side JS |
 | `src/email/` | SMTP or development log mailer | Provider chosen at boot; log refused in production |
 | `src/metrics/` | Prometheus counters, histograms, gauges | Process-local; bounded label set |
 | `src/openapi/` | OpenAPI 3.1 generation from config | Pure; no DB, no HTTP |
@@ -138,6 +139,24 @@ the original response is preserved. An audit outage must not become a 500.
 request (cheap, and impossible to drift). It is registered before `/:table` so
 it cannot be shadowed. The spec is intentionally generated, not hand-written:
 hand-maintained specs are the first thing to rot.
+
+## Admin panel
+
+`/admin` is a server-rendered Hono sub-app. It has no build step and ships no
+JavaScript.
+
+- **Separate session.** A cookie holds a random token hashed in
+  `_mungil_admin_sessions`, valid for `adminSessionTtlSeconds` (8 hours). It is
+  not an access token, so API tokens and panel cookies cannot be swapped.
+- **Role check on every request.** The session joins the users table and refuses
+  anything that is not `admin`; a demotion takes effect immediately.
+- **CSRF.** Double-submit token cookie plus hidden form field, compared in
+  constant time. `SameSite=Lax` reduces cross-site posts as well.
+- **One query path.** Forms call the same `listRows`/`createRow`/`updateRow`/
+  `deleteRow` functions as the API, with an admin `AuthContext`. There is no
+  privileged SQL in the panel.
+- **Escaping.** All interpolated values go through `escapeHtml`; JSON values are
+  rendered as text inside `code` elements.
 
 ## Metrics and load shedding
 

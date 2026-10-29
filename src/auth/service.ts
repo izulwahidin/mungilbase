@@ -340,6 +340,54 @@ export class AuthService {
     return { id: row.id, email: normalized, role }
   }
 
+  /**
+   * Separate cookie session for the server-rendered admin panel. It is not an
+   * access token: it exists only for `/admin`, has its own lifetime, and still
+   * resolves the role from the users table on every request.
+   */
+  async createAdminSession(userId: string, ttlSeconds: number): Promise<string> {
+    const token = createToken()
+    const now = this.now()
+    const expires = new Date(now.getTime() + ttlSeconds * 1000).toISOString()
+
+    this.db
+      .prepare(
+        `INSERT INTO "${AUTH_TABLES.adminSessions}"
+           ("token_hash", "user_id", "created_at", "expires_at")
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(hashToken(token), userId, now.toISOString(), expires)
+
+    return token
+  }
+
+  resolveAdminSession(token: string): AuthUser | null {
+    if (!isWellFormedToken(token)) return null
+
+    const row = this.db
+      .prepare(
+        `SELECT u."id" AS "id", u."email" AS "email", u."role" AS "role"
+         FROM "${AUTH_TABLES.adminSessions}" s
+         JOIN "${AUTH_TABLES.users}" u ON u."id" = s."user_id"
+         WHERE s."token_hash" = ? AND s."expires_at" > ? AND s."revoked_at" IS NULL`,
+      )
+      .get(hashToken(token), this.now().toISOString()) as AuthUser | undefined
+
+    if (!row || row.role !== 'admin') return null
+    return row
+  }
+
+  revokeAdminSession(token: string): void {
+    if (!isWellFormedToken(token)) return
+
+    this.db
+      .prepare(
+        `UPDATE "${AUTH_TABLES.adminSessions}" SET "revoked_at" = ?
+         WHERE "token_hash" = ? AND "revoked_at" IS NULL`,
+      )
+      .run(this.now().toISOString(), hashToken(token))
+  }
+
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
     const email = normalizeEmail(input.email)
     const accountKey = `acct:${email}`

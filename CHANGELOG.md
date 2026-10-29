@@ -16,6 +16,9 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 - Roles (`user`, `admin`) stored on the account and resolved on every request,
   `npm run user:role` to change one, and `auth.adminBypassRules` (default
   false) to make admins skip table rules.
+- Server-rendered admin panel at `/admin`: login, table browse, create/edit/
+  delete rows, separate HttpOnly cookie session, CSRF tokens, HTML escaping,
+  and audit events for admin access and writes.
 
 ## [0.1.0] — 2026-10-29
 
