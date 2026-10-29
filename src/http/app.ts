@@ -13,6 +13,7 @@ import { recordAudit } from '../audit/log.js'
 import { createMailer, type Mailer } from '../email/mailer.js'
 import { MetricsCollector } from '../metrics/collector.js'
 import { createStorage } from '../storage/storage.js'
+import type { ErrorReporter } from '../telemetry/sentry.js'
 import { buildOpenApi } from '../openapi/spec.js'
 import { createRegistry, type Registry } from '../tables/registry.js'
 import { AppError, unauthorized } from './errors.js'
@@ -44,6 +45,8 @@ export interface AppDeps {
   auth?: (c: Context<AppEnv>) => AuthContext | Promise<AuthContext>
   /** Overrides the mailer built from `email` config; tests use it. */
   mailer?: Mailer
+  /** Optional Sentry-compatible reporter for unhandled errors. */
+  reportError?: ErrorReporter
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
@@ -234,6 +237,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
         stack: error instanceof Error ? error.stack : undefined,
       }),
     )
+
+    deps.reportError?.(error, {
+      requestId: requestIdValue,
+      method: c.req.method,
+      path: c.req.path,
+    })
 
     recordFailure(c, 'internal', 500)
 

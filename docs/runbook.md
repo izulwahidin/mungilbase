@@ -224,6 +224,16 @@ WHERE session_id IN (SELECT id FROM _mungil_auth_sessions WHERE user_id = '<id>'
 Access tokens are looked up per request, so revocation is immediate for new
 requests. A request already in flight may still complete.
 
+### Error tracking
+
+Set `MUNGIL_SENTRY_DSN` to a Sentry (or Sentry-compatible) DSN. The app posts
+unhandled exceptions and uncaught process errors with their request id; there is
+no SDK and no retry queue. Reporting failures are silent by design.
+
+Logs remain the source of truth. The event payload includes the error message,
+request context and stack trace — review your data-retention policy before
+pointing this at a third party.
+
 ### Database locked / WAL keeps growing
 
 - A second process may hold the write lock. Confirm only one app process is

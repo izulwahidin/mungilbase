@@ -8,6 +8,7 @@ import { createApp } from './http/app.js'
 import { createRegistry, SchemaError } from './tables/registry.js'
 import { ensureAuthSchema } from './auth/schema.js'
 import { ensureAuditSchema } from './audit/log.js'
+import { createErrorReporter } from './telemetry/sentry.js'
 import type { Db } from './db/connect.js'
 
 const VERSION = process.env.MUNGIL_VERSION ?? '0.1.0'
@@ -34,7 +35,44 @@ async function main(): Promise<void> {
     log({ event: 'schema_synced', ...schema })
   }
 
-  const app = createApp({ config, db, dbFile, version: VERSION, registry })
+  const reportError = createErrorReporter({
+    dsn: process.env.MUNGIL_SENTRY_DSN,
+    environment: process.env.NODE_ENV,
+    release: VERSION,
+  })
+
+  const app = createApp({
+    config,
+    db,
+    dbFile,
+    version: VERSION,
+    registry,
+    reportError,
+  })
+
+  process.on('uncaughtException', (error) => {
+    reportError(error, { scope: 'uncaughtException' })
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        event: 'uncaught_exception',
+        message: error.message,
+        stack: error.stack,
+      }),
+    )
+    process.exit(1)
+  })
+
+  process.on('unhandledRejection', (reason) => {
+    reportError(reason, { scope: 'unhandledRejection' })
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        event: 'unhandled_rejection',
+        message: reason instanceof Error ? reason.message : String(reason),
+      }),
+    )
+  })
 
   const server = serve(
     {

@@ -193,6 +193,10 @@ Requests beyond `server.maxConcurrency` (default 64) are rejected immediately
 with `503 overloaded` and `Retry-After` instead of queueing. On a single SQLite
 writer that is the difference between a slow service and a dead one.
 
+Set `MUNGIL_SENTRY_DSN` to report unhandled errors and uncaught exceptions to a
+Sentry-compatible endpoint. Without it, errors stay in the structured JSON log
+with their request id.
+
 Query params for `GET /api/v1/:table`: `filter` (a rule expression), `sort`
 (`title` or `-title`), `limit` (1–200, default 50), `offset`. Newest first by
 default.
@@ -303,7 +307,7 @@ A release is not "production-ready" until all of these are true:
 - [x] Rule compiler property-tested; no interpolation of values
 - [x] Migrations checksummed, drift-detected, transactional
 - [x] Backup + tested restore (`scripts/restore-drill.sh`, run in CI)
-- [ ] Structured logs, request ids, health/version, error tracking
+- [x] Structured logs, request ids, health/version, and opt-in Sentry-compatible error tracking
 - [ ] Load test against a realistic dataset; N+1 and index review
 - [ ] Threat model reviewed; external penetration test before public launch
 

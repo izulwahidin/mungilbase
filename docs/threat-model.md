@@ -91,6 +91,7 @@ launch; **out** = deliberately not handled.
 | Stack traces in responses | done | Generic `internal` error; details go to logs only |
 | Request id injection into logs | done | Supplied ids must match a bounded charset |
 | Traffic stats exposed via `/metrics` | partial | Counts and latencies by route, no row data; set `MUNGIL_METRICS_TOKEN` to require a bearer token |
+| Error data sent to a third party | out (opt-in) | Only when `MUNGIL_SENTRY_DSN` is set; message, stack and request context, never request bodies |
 | Timing side channel on token compare | done (design) | Tokens are looked up by SHA-256 digest; there is no secret comparison to leak |
 | Access token theft | partial | Short TTL (15 min default), revocable sessions, family revocation on refresh reuse |
 

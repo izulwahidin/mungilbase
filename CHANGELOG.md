@@ -22,6 +22,8 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 - File fields with local storage, per-field size and MIME limits, update-rule
   authorization on upload, view-rule authorization on download, sandboxing CSP,
   and `file.upload` audit events.
+- Optional Sentry-compatible error reporting via `MUNGIL_SENTRY_DSN`, covering
+  request errors and uncaught process exceptions.
 
 ## [0.1.0] — 2026-10-29
 
