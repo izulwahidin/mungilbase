@@ -52,10 +52,24 @@ describe('tableDdl', () => {
     expect(ddl.create).toContain('"author_id" TEXT NOT NULL REFERENCES "users" ("id") ON DELETE RESTRICT')
     expect(ddl.create).toContain('"published" INTEGER DEFAULT 0 CHECK ("published" IN (0, 1))')
     expect(ddl.create).toContain('CHECK ("meta" IS NULL OR json_valid("meta"))')
-    expect(ddl.indexes).toEqual([
-      'CREATE INDEX IF NOT EXISTS "idx_posts_author_id" ON "posts" ("author_id")',
-      'CREATE INDEX IF NOT EXISTS "idx_posts_created_at" ON "posts" ("created_at")',
+    expect(ddl.indexes.map((index) => index.name)).toEqual([
+      'idx_posts_author_id',
+      'idx_posts_created_at',
     ])
+  })
+
+  it('adds configured indexes, including composite ones', () => {
+    const config = configWith(basePosts, { indexes: ['title', ['title', 'author_id']] })
+    const ddl = tableDdl(config.tables[1]!)
+
+    expect(ddl.indexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining(['idx_posts_title', 'idx_posts_title_author_id']),
+    )
+    expect(
+      ddl.indexes.find((index) => index.name === 'idx_posts_title_author_id')?.sql,
+    ).toBe(
+      'CREATE INDEX IF NOT EXISTS "idx_posts_title_author_id" ON "posts" ("title", "author_id")',
+    )
   })
 
   it('escapes default values', () => {
@@ -94,6 +108,24 @@ describe('ensureSchema', () => {
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts'`)
       .all() as { name: string }[]
     expect(indexes.map((index) => index.name)).toContain('idx_posts_created_at')
+    db.close()
+  })
+
+  it('creates configured indexes', () => {
+    const db = openDatabase(':memory:')
+    sync(db, configWith(basePosts, { indexes: [['title', 'author_id']] }))
+
+    const indexes = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts'`)
+      .all() as { name: string }[]
+    expect(indexes.map((index) => index.name)).toContain('idx_posts_title_author_id')
+    db.close()
+  })
+
+  it('refuses to drop a configured index silently', () => {
+    const db = openDatabase(':memory:')
+    sync(db, configWith(basePosts, { indexes: ['title'] }))
+    expect(() => sync(db, configWith(basePosts))).toThrow(/not in the config/)
     db.close()
   })
 

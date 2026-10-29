@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'rule_violation'
   | 'conflict'
   | 'rate_limited'
+  | 'overloaded'
   | 'internal'
 
 /**

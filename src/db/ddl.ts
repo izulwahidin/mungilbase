@@ -14,9 +14,14 @@ const SQL_TYPES = {
 
 const TIMESTAMP_DEFAULT = `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
 
+export interface IndexDdl {
+  name: string
+  sql: string
+}
+
 export interface TableDdl {
   create: string
-  indexes: string[]
+  indexes: IndexDdl[]
 }
 
 export function quote(name: string): string {
@@ -83,20 +88,30 @@ export function tableDdl(table: TableConfig): TableDdl {
     columns.push(timestampColumn('created_at'), timestampColumn('updated_at'))
   }
 
-  const indexes = table.fields
-    .filter((field) => field.references)
-    .map(
-      (field) =>
-        `CREATE INDEX IF NOT EXISTS ${quote(`idx_${table.name}_${field.name}`)} ` +
-        `ON ${quote(table.name)} (${quote(field.name)})`,
-    )
+  const indexes: IndexDdl[] = []
+  const seen = new Set<string>()
+
+  const addIndex = (columns: string[]): void => {
+    const name = `idx_${table.name}_${columns.join('_')}`
+    if (seen.has(name)) return
+    seen.add(name)
+    indexes.push({
+      name,
+      sql:
+        `CREATE INDEX IF NOT EXISTS ${quote(name)} ON ${quote(table.name)} ` +
+        `(${columns.map(quote).join(', ')})`,
+    })
+  }
+
+  for (const field of table.fields) {
+    if (field.references) addIndex([field.name])
+  }
 
   // Default listing is newest-first, so this index is on the hot path.
-  if (table.timestamps) {
-    indexes.push(
-      `CREATE INDEX IF NOT EXISTS ${quote(`idx_${table.name}_created_at`)} ` +
-        `ON ${quote(table.name)} (${quote('created_at')})`,
-    )
+  if (table.timestamps) addIndex(['created_at'])
+
+  for (const entry of table.indexes) {
+    addIndex(Array.isArray(entry) ? entry : [entry])
   }
 
   return {
@@ -146,7 +161,7 @@ export function ensureSchema(db: Db, registry: Registry): SchemaResult {
 
       if (!existing.has(table.name)) {
         db.exec(ddl.create)
-        for (const index of ddl.indexes) db.exec(index)
+        for (const index of ddl.indexes) db.exec(index.sql)
         created.push(table.name)
         continue
       }
@@ -202,9 +217,26 @@ export function ensureSchema(db: Db, registry: Registry): SchemaResult {
         added.push(field.name)
       }
 
+      // Removing an index from the config is a migration, like removing a
+      // column: the app never drops an index on its own.
+      const managedPrefix = `idx_${table.name}_`
+      const desiredIndexes = new Set(ddl.indexes.map((index) => index.name))
+      const existingIndexes = db
+        .prepare(`PRAGMA index_list(${quote(table.name)})`)
+        .all() as { name: string }[]
+      const dropped = existingIndexes
+        .map((index) => index.name)
+        .filter((name) => name.startsWith(managedPrefix) && !desiredIndexes.has(name))
+      if (dropped.length) {
+        throw new SchemaError(
+          `Table "${table.name}" has index(es) ${dropped.map((name) => `"${name}"`).join(', ')} ` +
+            `that are not in the config. Removing an index is a migration, not a config change.`,
+        )
+      }
+
       // Idempotent: also backfills indexes for tables created by an older
       // version, including the default listing index.
-      for (const index of ddl.indexes) db.exec(index)
+      for (const index of ddl.indexes) db.exec(index.sql)
 
       if (added.length) altered.push({ table: table.name, columns: added })
     }

@@ -85,6 +85,14 @@ export const tableSchema = z
     rules: rulesSchema,
     /** Adds `created_at` / `updated_at` columns maintained by the engine. */
     timestamps: z.boolean().default(true),
+    /**
+     * Extra indexes for hot filters. Each entry is a column name or a
+     * composite list, e.g. `['done', 'created_at']`.
+     */
+    indexes: z
+      .array(z.union([identifier, z.array(identifier).min(1).max(8)]))
+      .max(20)
+      .default([]),
   })
   .strict()
 
@@ -95,6 +103,8 @@ export const configSchema = z
       .object({
         host: z.string().min(1).default('0.0.0.0'),
         port: z.number().int().min(1).max(65535).default(8787),
+        /** Requests in flight before new ones are shed with 503. */
+        maxConcurrency: z.number().int().min(1).max(10_000).default(64),
       })
       .default({}),
     database: z
@@ -176,6 +186,26 @@ export const configSchema = z
             path,
             message: `References unknown column "${field.references.table}.${field.references.column}"`,
           })
+        }
+      }
+
+      for (const [indexIndex, entry] of table.indexes.entries()) {
+        const columns = Array.isArray(entry) ? entry : [entry]
+        if (new Set(columns).size !== columns.length) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tables', tableIndex, 'indexes', indexIndex],
+            message: 'An index cannot repeat a column',
+          })
+        }
+        for (const column of columns) {
+          if (!tableHasColumn(table, column)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['tables', tableIndex, 'indexes', indexIndex],
+              message: `Index references unknown column "${column}"`,
+            })
+          }
         }
       }
     }

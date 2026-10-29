@@ -16,7 +16,7 @@ const baseTable = {
 describe('config schema', () => {
   it('fills in safe defaults', () => {
     const config = configSchema.parse({ tables: [baseTable] })
-    expect(config.server).toEqual({ host: '0.0.0.0', port: 8787 })
+    expect(config.server).toEqual({ host: '0.0.0.0', port: 8787, maxConcurrency: 64 })
     expect(config.database).toEqual({ file: './data/mungil.db' })
     expect(config.allowedOrigins).toEqual([])
     expect(config.tables[0]!.timestamps).toBe(true)
@@ -78,5 +78,21 @@ describe('config schema', () => {
 
     const byId = { ...baseTable, fields: [{ name: 'author_id', type: 'text', references: { table: 'users', column: 'id' } }] }
     expect(configSchema.safeParse({ tables: [byId, users] }).success).toBe(true)
+  })
+
+  it('accepts configured indexes and rejects bad ones', () => {
+    expect(
+      configSchema.safeParse({
+        tables: [{ ...baseTable, indexes: ['title', ['title', 'created_at']] }],
+      }).success,
+    ).toBe(true)
+
+    expect(
+      configSchema.safeParse({ tables: [{ ...baseTable, indexes: ['missing'] }] }).success,
+    ).toBe(false)
+
+    expect(
+      configSchema.safeParse({ tables: [{ ...baseTable, indexes: [['title', 'title']] }] }).success,
+    ).toBe(false)
   })
 })

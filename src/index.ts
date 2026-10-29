@@ -34,7 +34,7 @@ async function main(): Promise<void> {
     log({ event: 'schema_synced', ...schema })
   }
 
-  const app = createApp({ config, db, version: VERSION, registry })
+  const app = createApp({ config, db, dbFile, version: VERSION, registry })
 
   const server = serve(
     {

@@ -40,6 +40,16 @@ SQLite file, one operator.
    ```
 
 5. Backups are present and recent in the backup target.
+6. Scrape `/metrics` (set `MUNGIL_METRICS_TOKEN` and send a bearer token):
+
+   | Alert | Query |
+   |---|---|
+   | Error rate | `sum(rate(mungil_http_requests_total{status=~"5.."}[5m])) > 0` |
+   | Latency | `histogram_quantile(0.95, sum by (le) (rate(mungil_http_request_duration_ms_bucket[5m]))) > 200` |
+   | Rule denials | `sum(rate(mungil_rule_denials_total[5m])) > 1` |
+   | Auth failures | `sum(rate(mungil_auth_failures_total[5m])) > 5` |
+   | Disk headroom | `mungil_db_size_bytes + mungil_db_wal_size_bytes` growing without bound |
+   | Saturation | `mungil_http_requests_total{status="503"}` increasing |
 
 ---
 
@@ -224,6 +234,20 @@ application itself never does it.
 
 ---
 
+## Load shedding and capacity
+
+`server.maxConcurrency` (default 64) caps in-flight requests. Beyond that the
+app returns `503 overloaded` with `Retry-After` instead of queueing. On a single
+SQLite writer, queueing converts overload into unbounded latency; shedding keeps
+failures cheap.
+
+- A rising `mungil_http_requests_total{status="503"}` means the process is
+  saturated. Find the slow route first; do not raise the cap on a hunch.
+- Handler execution is not preempted. A slow query holds a slot until it
+  returns. `busy_timeout` bounds lock waits, not query time.
+- Password hashing costs ~40–60 ms each. At the default cap, a login flood can
+  occupy every slot; lower `maxConcurrency` if logins dominate traffic.
+
 ## Performance baseline
 
 Measured on a 20,000-row table, single Node 22 process, SQLite on local NTFS,
@@ -244,10 +268,18 @@ size before sizing anything.
 npm run bench -- --url http://127.0.0.1:8787 --concurrency 32 --seconds 15
 ```
 
+For a capacity test, seed a table without foreign keys and run k6:
+
+```bash
+npx tsx scripts/seed.ts --config ./mungil.config.json --table posts --rows 100000
+BASE_URL=http://127.0.0.1:8787 RATE=200 DURATION=60s k6 run scripts/loadtest.k6.js
+```
+
 Indexes created automatically: `id` (primary key), unique fields, foreign-key
-columns, and `created_at` for default ordering. Filters on other columns scan
-the table. If a filter is hot, add an index manually and record it in the
-migration history — config-defined indexes are not in v0.1.
+columns, and `created_at` for default ordering. If a filter is hot, add it to
+the table's `indexes` config and rerun `npm run migrate`; composite indexes are
+written as arrays. Removing an index from the config is refused at startup
+(like removing a column), so dropping one requires an explicit migration.
 
 ---
 

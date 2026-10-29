@@ -30,6 +30,7 @@ operate. That is the feature.
 | `src/http/` | Routing, errors, middleware | No SQL strings |
 | `src/auth/` | Argon2id, opaque tokens, sessions, throttling | Owns its internal tables; never interpolates user input into SQL |
 | `src/audit/` | Append-only security events | Never throws; no update/delete path |
+| `src/metrics/` | Prometheus counters, histograms, gauges | Process-local; bounded label set |
 | `src/openapi/` | OpenAPI 3.1 generation from config | Pure; no DB, no HTTP |
 
 ## Invariants
@@ -125,6 +126,17 @@ the original response is preserved. An audit outage must not become a 500.
 request (cheap, and impossible to drift). It is registered before `/:table` so
 it cannot be shadowed. The spec is intentionally generated, not hand-written:
 hand-maintained specs are the first thing to rot.
+
+## Metrics and load shedding
+
+`/metrics` renders Prometheus text from process-local counters. Route labels use
+the matched Hono pattern, never the raw path, so cardinality is bounded by the
+config. Counters reset on restart, which Prometheus handles.
+
+A concurrency cap sits in front of the app. At capacity, requests get `503
+overloaded` immediately rather than waiting in a queue that only converts
+saturation into latency. Slots are released in a `finally`, and the cap applies
+to every route, including auth (the most CPU-expensive path).
 
 ## Error contract
 

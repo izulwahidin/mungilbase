@@ -57,6 +57,10 @@ Back up, prove the backup works, and take a load baseline:
 npm run backup -- ./backups
 npm run drill                    # online backup -> verify -> restore -> compare
 npm run bench -- --concurrency 16 --seconds 10
+
+# Larger load test (needs k6)
+npx tsx scripts/seed.ts --config ./mungil.config.json --table posts --rows 100000
+k6 run scripts/loadtest.k6.js
 ```
 
 Run everything CI runs, locally, in one command:
@@ -136,6 +140,17 @@ LIMIT 50;
 The application never updates or deletes audit rows. An operator with direct
 database access can, which is out of scope (see the threat model).
 
+### Metrics and load shedding
+
+`GET /metrics` exposes Prometheus text metrics: request counts and latency
+histograms by matched route and status, auth failures, rule denials, DB and WAL
+size, active sessions, uptime and memory. Set `MUNGIL_METRICS_TOKEN` to require
+`Authorization: Bearer …` on the endpoint.
+
+Requests beyond `server.maxConcurrency` (default 64) are rejected immediately
+with `503 overloaded` and `Retry-After` instead of queueing. On a single SQLite
+writer that is the difference between a slow service and a dead one.
+
 Query params for `GET /api/v1/:table`: `filter` (a rule expression), `sort`
 (`title` or `-title`), `limit` (1–200, default 50), `offset`. Newest first by
 default.
@@ -157,7 +172,7 @@ export default {
   appUrl: 'http://localhost:8787',   // your frontend origin
   allowedOrigins: [],                 // extra browser origins; empty = same-origin only
   database: { file: './data/mungil.db' },
-  server: { host: '0.0.0.0', port: 8787 },
+  server: { host: '0.0.0.0', port: 8787, maxConcurrency: 64 },
   auth: { allowSignup: false },       // omit to disable /api/v1/auth entirely
   tables: [{
     name: 'posts',
@@ -173,6 +188,8 @@ export default {
       update: 'auth.uid == author_id',
       delete: 'auth.uid == author_id',
     },
+    // Optional indexes for hot filters. Removing one requires a migration.
+    indexes: ['published', ['author_id', 'created_at']],
   }],
 }
 ```

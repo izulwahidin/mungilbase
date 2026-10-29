@@ -83,6 +83,7 @@ launch; **out** = deliberately not handled.
 | Hashes leaked by a view rule | done | Auth users live in `_mungil_auth_users`, never in a config table; no route returns `password_hash` |
 | Stack traces in responses | done | Generic `internal` error; details go to logs only |
 | Request id injection into logs | done | Supplied ids must match a bounded charset |
+| Traffic stats exposed via `/metrics` | partial | Counts and latencies by route, no row data; set `MUNGIL_METRICS_TOKEN` to require a bearer token |
 | Timing side channel on token compare | done (design) | Tokens are looked up by SHA-256 digest; there is no secret comparison to leak |
 | Access token theft | partial | Short TTL (15 min default), revocable sessions, family revocation on refresh reuse |
 
@@ -90,11 +91,12 @@ launch; **out** = deliberately not handled.
 
 | Threat | Status | Mitigation |
 |---|---|---|
-| Password-cost exhaustion | partial | Fixed Argon2id cost (19 MiB, t=2, p=1), 1 MB body cap, and login throttling; no global concurrency cap yet |
+| Password-cost exhaustion | done (bounded) | Fixed Argon2id cost, login throttling, and `server.maxConcurrency` shedding with `503` |
 | Login brute force | done | Fixed windows per account (5/15 min) and per IP (30/10 min), counters persisted in SQLite; `Retry-After` returned |
+| Query flood / slow filters | done (bounded) | Concurrency cap sheds excess with `503 overloaded`; filters on hot columns should be indexed via config |
 | Oversized expressions | done | 2,000 character rule cap, 64-level nesting cap |
 | Large request bodies | done | 1 MB cap enforced before parsing, plus a post-read byte check |
-| Connection exhaustion | done (single node) | `busy_timeout`, WAL, and single-process SQLite writes |
+| Connection exhaustion | done (single node) | `busy_timeout`, WAL, single-process writes, and load shedding |
 
 ### Elevation of privilege
 

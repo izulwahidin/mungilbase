@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { secureHeaders } from 'hono/secure-headers'
@@ -9,9 +10,12 @@ import { anonymous, type AuthContext } from '../auth/context.js'
 import { AuthService } from '../auth/service.js'
 import { bearerToken } from '../auth/bearer.js'
 import { recordAudit } from '../audit/log.js'
+import { MetricsCollector } from '../metrics/collector.js'
 import { buildOpenApi } from '../openapi/spec.js'
 import { createRegistry, type Registry } from '../tables/registry.js'
-import { AppError } from './errors.js'
+import { AppError, unauthorized } from './errors.js'
+import { concurrencyLimit } from './limits.js'
+import { metricsMiddleware } from './metrics.js'
 import { requestId, requestLog } from './middleware.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCrudRoutes } from './routes/crud.js'
@@ -28,9 +32,11 @@ export interface AppDeps {
   version: string
   /** Required for CRUD routes. Health and version work without it. */
   db?: Db
+  /** Used for the DB size gauges on /metrics. */
+  dbFile?: string
   /** Built from config when omitted; index.ts passes the one it schema-synced. */
   registry?: Registry
-  /** Week 7 replaces this with real JWT/session verification. */
+  /** Replaces token verification entirely; tests use it. */
   auth?: (c: Context<AppEnv>) => AuthContext | Promise<AuthContext>
 }
 
@@ -38,6 +44,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>()
   const startedAt = Date.now()
   const registry = deps.registry ?? createRegistry(deps.config)
+  const metrics = new MetricsCollector()
   const authService = deps.db && deps.config.auth ? new AuthService(deps.db, deps.config.auth) : null
 
   // A test hook can replace token verification entirely; production uses the
@@ -55,6 +62,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.use('*', requestId())
   app.use('*', requestLog())
   app.use('*', secureHeaders())
+  app.use('*', metricsMiddleware(metrics))
+  app.use('*', concurrencyLimit(deps.config.server.maxConcurrency))
 
   app.use('/api/*', async (c, next) => {
     c.set('auth', await resolveAuth(c))
@@ -78,6 +87,18 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     }),
   )
 
+  app.get('/metrics', (c) => {
+    const required = process.env.MUNGIL_METRICS_TOKEN
+    if (required) {
+      const token = bearerToken(c.req.header('authorization'))
+      if (!token || !secureEqual(token, required)) throw unauthorized('Invalid metrics token')
+    }
+
+    return c.text(metrics.render({ db: deps.db, dbFile: deps.dbFile, version: deps.version }), 200, {
+      'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    })
+  })
+
   // Registered before the table routes: `/api/v1/openapi.json` would
   // otherwise match `/:table`.
   app.get('/api/v1/openapi.json', (c) => c.json(buildOpenApi(deps.config, deps.version)))
@@ -87,8 +108,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   if (authService && deps.db) registerAuthRoutes(app, { service: authService, db: deps.db })
   if (deps.db) registerCrudRoutes(app, { db: deps.db, registry })
 
-  const auditFailure = (c: Context<AppEnv>, code: string, status: number): void => {
-    if (!deps.db) return
+  const recordFailure = (c: Context<AppEnv>, code: string, status: number): void => {
     // Only security-relevant outcomes. Validation errors are noise here.
     const interesting =
       code === 'rule_violation' || code === 'rate_limited' || code === 'unauthorized' || status >= 500
@@ -97,15 +117,21 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     const match = /^\/api\/v1\/([^/]+)(?:\/([^/]+))?$/.exec(c.req.path)
     const table = match && match[1] !== 'auth' ? match[1] : null
     const resourceId = match?.[2] ?? null
-    const auth = c.get('auth') as AuthContext | undefined
+    const operation = operationFor(c.req.method, resourceId)
 
+    if (code === 'rule_violation') metrics.ruleDenial(table ?? 'unknown', operation ?? 'unknown')
+    if (code === 'unauthorized' || code === 'rate_limited') metrics.authFailure(code)
+
+    if (!deps.db) return
+
+    const auth = c.get('auth') as AuthContext | undefined
     recordAudit(deps.db, {
       event: status >= 500 ? 'http.error' : 'http.denied',
       outcome: code === 'rule_violation' ? 'denied' : 'failure',
       requestId: c.get('requestId'),
       userId: auth?.uid ?? null,
       table,
-      operation: operationFor(c.req.method, resourceId),
+      operation,
       resourceId,
       code,
       metadata: { method: c.req.method, path: c.req.path, status },
@@ -144,8 +170,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     const requestIdValue = c.get('requestId')
 
     if (error instanceof AppError) {
-      auditFailure(c, error.code, error.statusCode)
-      if (error.code === 'rate_limited') {
+      recordFailure(c, error.code, error.statusCode)
+      if (error.code === 'rate_limited' || error.code === 'overloaded') {
         const details = error.details as { retryAfterSeconds?: number } | undefined
         if (typeof details?.retryAfterSeconds === 'number') {
           c.header('Retry-After', String(details.retryAfterSeconds))
@@ -177,7 +203,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       }),
     )
 
-    auditFailure(c, 'internal', 500)
+    recordFailure(c, 'internal', 500)
 
     return c.json(
       { error: { code: 'internal', message: 'Internal server error', request_id: requestIdValue } },
@@ -186,6 +212,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   })
 
   return app
+}
+
+function secureEqual(left: string, right: string): boolean {
+  const a = Buffer.from(left, 'utf8')
+  const b = Buffer.from(right, 'utf8')
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 function operationFor(method: string, resourceId: string | null): string | null {
