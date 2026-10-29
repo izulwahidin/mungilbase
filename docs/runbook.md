@@ -253,6 +253,23 @@ application itself never does it.
 
 ---
 
+## Files
+
+Uploaded files live outside SQLite in `storage.local.dir` (default
+`./data/files`). They are **not** included in `npm run backup` or Litestream.
+
+- Back the directory up separately (filesystem snapshot or `rsync`). If you need
+  DB and files consistent, pause writes, snapshot the DB, then sync the files.
+- Deleting a row does not delete its files. Keys are
+  `<table>/<id-hash>/<field>/<uuid>.<ext>`; find orphans by listing keys and
+  checking the corresponding rows, or prune by age.
+- Per-field limits are enforced (`maxBytes`, `allowedTypes`). Content type is
+  taken from the multipart header; there is no magic-byte sniffing or malware
+  scan yet.
+- Responses are served inline with a sandboxing CSP and `nosniff`, so an SVG
+  upload cannot run script on the API origin.
+- Disk usage is not in `/metrics`; monitor the volume with the system tooling.
+
 ## Load shedding and capacity
 
 `server.maxConcurrency` (default 64) caps in-flight requests. Beyond that the

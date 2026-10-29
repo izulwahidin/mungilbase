@@ -97,6 +97,20 @@ describe('buildOpenApi', () => {
     expect(item.delete.responses[403]).toBeDefined()
   })
 
+  it('documents file fields as storage keys', () => {
+    const fileConfig = configSchema.parse({
+      tables: [
+        {
+          name: 'files',
+          fields: [{ name: 'upload', type: 'file' }],
+          rules,
+        },
+      ],
+    })
+    const fileSpec = buildOpenApi(fileConfig, '1.0.0') as Loose
+    expect(fileSpec.components.schemas.filesRead.properties.upload.anyOf[0].type).toBe('string')
+  })
+
   it('omits password reset paths when email is not configured', () => {
     const noEmail = configSchema.parse({
       appUrl: 'https://api.example.com',

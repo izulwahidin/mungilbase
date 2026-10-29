@@ -186,6 +186,9 @@ function formField(field: FieldConfig, value: unknown): string {
       return `${label}<input id="${id}" name="${id}" type="text" placeholder="2026-01-01T00:00:00.000Z" ${required} value="${escapeHtml(value ?? '')}">`
     case 'text':
       return `${label}<input id="${id}" name="${id}" type="text" ${required} value="${escapeHtml(value ?? '')}">`
+    case 'file':
+      return `${label}<input id="${id}" name="${id}" type="text" placeholder="stored file key" value="${escapeHtml(value ?? '')}">
+        <p class="muted">Upload with POST /api/v1/:table/:id/files/${escapeHtml(field.name)}, then paste the returned key here.</p>`
   }
 }
 

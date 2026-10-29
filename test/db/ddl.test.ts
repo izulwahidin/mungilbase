@@ -72,6 +72,11 @@ describe('tableDdl', () => {
     )
   })
 
+  it('maps file fields to TEXT storage keys', () => {
+    const config = configWith([{ name: 'upload', type: 'file' }])
+    expect(tableDdl(config.tables[1]!).create).toContain('"upload" TEXT')
+  })
+
   it('escapes default values', () => {
     const config = configWith([{ name: 'title', type: 'text', default: "it's" }])
     expect(tableDdl(config.tables[1]!).create).toContain(`DEFAULT 'it''s'`)

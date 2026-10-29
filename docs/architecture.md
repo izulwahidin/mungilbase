@@ -32,6 +32,7 @@ operate. That is the feature.
 | `src/audit/` | Append-only security events | Never throws; no update/delete path |
 | `src/admin/` | Server-rendered HTML for `/admin` | Every value escaped; no client-side JS |
 | `src/email/` | SMTP or development log mailer | Provider chosen at boot; log refused in production |
+| `src/storage/` | Local file storage behind an interface | Generated keys only; validates the storage root |
 | `src/metrics/` | Prometheus counters, histograms, gauges | Process-local; bounded label set |
 | `src/openapi/` | OpenAPI 3.1 generation from config | Pure; no DB, no HTTP |
 
@@ -157,6 +158,22 @@ JavaScript.
   privileged SQL in the panel.
 - **Escaping.** All interpolated values go through `escapeHtml`; JSON values are
   rendered as text inside `code` elements.
+
+## Files
+
+A `file` field stores a string key; the bytes live in `storage.local.dir`.
+
+- Upload: `POST /api/v1/:table/:id/files/:field` (multipart `file`). Size and
+  MIME prefix are checked first, then the object is written, then the row is
+  updated with the key. The update rule is the authorization check; a denial
+  deletes the object, so a denied upload cannot fill the disk.
+- Download: `GET /api/v1/:table/:id/files/:field` resolves the row through the
+  view rule, then streams the object with a sandboxing CSP and `nosniff`.
+- Keys are server-generated: `<table>/<sha256(id)[0:16]>/<field>/<uuid>.<ext>`.
+  The storage adapter re-validates them and refuses anything outside its root.
+- Deleting a row does not delete files. There is no GC job yet; the runbook
+  describes manual pruning.
+- The `Storage` interface is small enough to add S3 later; v0.1 is local disk.
 
 ## Metrics and load shedding
 

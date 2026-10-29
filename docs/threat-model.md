@@ -69,6 +69,8 @@ launch; **out** = deliberately not handled.
 | Malicious config | done (partial) | Strict schema, all five rules required, reference checks |
 | CSRF against the admin panel | done | Double-submit token on every POST, `SameSite=Lax` cookies, no CORS on `/admin` |
 | XSS in the admin panel | done | All rendered values are HTML-escaped; no client-side JS is shipped |
+| Path traversal through upload keys | done | Keys are generated server-side, matched against a strict pattern, and resolved under the storage root |
+| Malicious file content | partial | Per-field size and MIME-prefix limits, sandboxing CSP and `nosniff`; no magic-byte sniffing or malware scan |
 
 ### Repudiation
 
@@ -99,6 +101,7 @@ launch; **out** = deliberately not handled.
 | Password-cost exhaustion | done (bounded) | Fixed Argon2id cost, login throttling, and `server.maxConcurrency` shedding with `503` |
 | Login brute force | done | Fixed windows per account (5/15 min) and per IP (30/10 min), counters persisted in SQLite; `Retry-After` returned |
 | Query flood / slow filters | done (bounded) | Concurrency cap sheds excess with `503 overloaded`; filters on hot columns should be indexed via config |
+| Storage exhaustion via uploads | partial | Per-file `maxBytes` and MIME allowlists; no per-account quota and no orphan cleanup job yet |
 | Oversized expressions | done | 2,000 character rule cap, 64-level nesting cap |
 | Large request bodies | done | 1 MB cap enforced before parsing, plus a post-read byte check |
 | Connection exhaustion | done (single node) | `busy_timeout`, WAL, single-process writes, and load shedding |

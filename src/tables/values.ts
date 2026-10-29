@@ -175,6 +175,13 @@ export function toStored(field: FieldConfig, value: unknown): StoredValue {
       }
       return value
     }
+
+    case 'file': {
+      if (typeof value !== 'string' || value.length === 0 || value.length > 1_024) {
+        throw new ResultError('Expected a stored file key')
+      }
+      return value
+    }
   }
 }
 

@@ -51,6 +51,8 @@ function fieldSchema(field: FieldConfig): Schema {
       return { type: 'boolean' }
     case 'json':
       return {}
+    case 'file':
+      return { type: 'string', description: 'Storage key set by the file upload route' }
   }
 }
 

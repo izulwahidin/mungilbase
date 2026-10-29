@@ -116,6 +116,30 @@ describe('config schema', () => {
     ).toBe(false)
   })
 
+  it('validates file fields and storage settings', () => {
+    const parsed = configSchema.parse({
+      tables: [{ ...baseTable, fields: [{ name: 'upload', type: 'file' }] }],
+    })
+    expect(parsed.tables[0]!.fields[0]).toMatchObject({
+      type: 'file',
+      maxBytes: 5_000_000,
+      allowedTypes: ['image/'],
+    })
+    expect(parsed.storage).toBeUndefined()
+
+    const withStorage = configSchema.parse({
+      storage: { local: { dir: '/srv/files' } },
+      tables: [],
+    })
+    expect(withStorage.storage).toEqual({ provider: 'local', local: { dir: '/srv/files' } })
+
+    expect(
+      configSchema.safeParse({
+        tables: [{ ...baseTable, fields: [{ name: 'upload', type: 'file', allowedTypes: [] }] }],
+      }).success,
+    ).toBe(true)
+  })
+
   it('accepts configured indexes and rejects bad ones', () => {
     expect(
       configSchema.safeParse({

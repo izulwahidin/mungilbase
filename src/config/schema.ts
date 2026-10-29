@@ -9,7 +9,15 @@ const identifier = z
   .string()
   .regex(/^[a-z][a-z0-9_]{0,62}$/, 'Use lowercase letters, digits and underscores; start with a letter')
 
-export const fieldTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json', 'date'])
+export const fieldTypeSchema = z.enum([
+  'text',
+  'integer',
+  'real',
+  'boolean',
+  'json',
+  'date',
+  'file',
+])
 
 export const fieldSchema = z
   .object({
@@ -19,6 +27,10 @@ export const fieldSchema = z
     unique: z.boolean().default(false),
     /** Only literals are supported in v0.1. Expressions arrive with the query DSL. */
     default: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
+    /** File fields only. Bytes accepted by the upload route. */
+    maxBytes: z.number().int().min(1).max(100_000_000).default(5_000_000),
+    /** File fields only. MIME prefixes; an empty list allows everything. */
+    allowedTypes: z.array(z.string().min(1).max(100)).max(20).default(['image/']),
     references: z
       .object({
         table: identifier,
@@ -147,6 +159,18 @@ export const tableSchema = z
   })
   .strict()
 
+export const storageConfigSchema = z
+  .object({
+    provider: z.literal('local').default('local'),
+    local: z
+      .object({
+        dir: z.string().min(1).default('./data/files'),
+      })
+      .strict()
+      .default({}),
+  })
+  .strict()
+
 export const configSchema = z
   .object({
     appUrl: z.string().url().optional(),
@@ -170,6 +194,8 @@ export const configSchema = z
     auth: authConfigSchema.optional(),
     /** Required for password reset emails. */
     email: emailConfigSchema.optional(),
+    /** Where uploaded files live. Local disk only in v0.1. */
+    storage: storageConfigSchema.optional(),
     tables: z.array(tableSchema).default([]),
   })
   .strict()
@@ -278,6 +304,7 @@ export type FieldType = z.infer<typeof fieldTypeSchema>
 export type FieldConfig = z.infer<typeof fieldSchema>
 export type AuthConfig = z.infer<typeof authConfigSchema>
 export type EmailConfig = z.infer<typeof emailConfigSchema>
+export type StorageConfig = z.infer<typeof storageConfigSchema>
 export type RuleConfig = z.infer<typeof ruleSchema>
 export type RulesConfig = z.infer<typeof rulesSchema>
 export type TableConfig = z.infer<typeof tableSchema>

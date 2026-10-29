@@ -19,6 +19,9 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 - Server-rendered admin panel at `/admin`: login, table browse, create/edit/
   delete rows, separate HttpOnly cookie session, CSRF tokens, HTML escaping,
   and audit events for admin access and writes.
+- File fields with local storage, per-field size and MIME limits, update-rule
+  authorization on upload, view-rule authorization on download, sandboxing CSP,
+  and `file.upload` audit events.
 
 ## [0.1.0] — 2026-10-29
 

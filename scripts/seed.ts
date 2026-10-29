@@ -55,6 +55,8 @@ function valueFor(field: FieldConfig, index: number): string | number {
       return JSON.stringify({ index, tag: `seed-${field.name}` })
     case 'date':
       return new Date(Date.now() - index * 60_000).toISOString()
+    case 'file':
+      return `seed/${String(index).padStart(16, '0')}/${field.name}/placeholder.txt`
   }
 }
 

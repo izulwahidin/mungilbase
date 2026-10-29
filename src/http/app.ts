@@ -12,6 +12,7 @@ import { bearerToken } from '../auth/bearer.js'
 import { recordAudit } from '../audit/log.js'
 import { createMailer, type Mailer } from '../email/mailer.js'
 import { MetricsCollector } from '../metrics/collector.js'
+import { createStorage } from '../storage/storage.js'
 import { buildOpenApi } from '../openapi/spec.js'
 import { createRegistry, type Registry } from '../tables/registry.js'
 import { AppError, unauthorized } from './errors.js'
@@ -21,6 +22,7 @@ import { requestId, requestLog } from './middleware.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCrudRoutes } from './routes/crud.js'
+import { registerFileRoutes } from './routes/files.js'
 
 export interface AppEnv {
   Variables: {
@@ -50,6 +52,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const registry = deps.registry ?? createRegistry(deps.config)
   const metrics = new MetricsCollector()
   const mailer = deps.mailer ?? (deps.config.email ? createMailer(deps.config.email) : undefined)
+  const storage = createStorage(deps.config.storage)
   const authService = deps.db && deps.config.auth ? new AuthService(deps.db, deps.config.auth) : null
 
   // A test hook can replace token verification entirely; production uses the
@@ -132,7 +135,10 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       config: deps.config,
     })
   }
-  if (deps.db) registerCrudRoutes(app, { db: deps.db, registry })
+  if (deps.db) {
+    registerFileRoutes(app, { db: deps.db, registry, storage })
+    registerCrudRoutes(app, { db: deps.db, registry })
+  }
 
   const recordFailure = (c: Context<AppEnv>, code: string, status: number): void => {
     // Only security-relevant outcomes. Validation errors are noise here.

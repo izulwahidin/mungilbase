@@ -109,6 +109,21 @@ Registered only when the config has an `auth` block.
 | `POST` | `/api/v1/auth/logout` | `204`, revokes the session |
 | `GET` | `/api/v1/auth/me` | current user; `401` without a token |
 
+### Files
+
+A `file` field stores a storage key. Two routes handle it:
+
+| Method | Path | Rule applied |
+|---|---|---|
+| `POST` | `/api/v1/:table/:id/files/:field` | `update`, multipart field `file` |
+| `GET` | `/api/v1/:table/:id/files/:field` | `view` |
+
+Uploads are limited by the field's `maxBytes` (5 MB default) and
+`allowedTypes` MIME prefixes (`['image/']` default). The file is written before
+the row update; if the update rule denies, the file is deleted again. Files live
+outside the database (`storage.local.dir`, default `./data/files`), so back them
+up separately from SQLite. Deleting a row does not delete its files yet.
+
 Sessions are opaque 256-bit tokens stored as SHA-256 hashes in SQLite, not
 JWTs. That makes logout and revocation immediate instead of "eventually, when
 the token expires". Refresh tokens are single-use: replaying a rotated token
@@ -199,6 +214,7 @@ export default {
   appUrl: 'http://localhost:8787',   // your frontend origin
   allowedOrigins: [],                 // extra browser origins; empty = same-origin only
   database: { file: './data/mungil.db' },
+  storage: { local: { dir: './data/files' } }, // for file fields
   server: { host: '0.0.0.0', port: 8787, maxConcurrency: 64 },
   auth: { allowSignup: false, adminBypassRules: false }, // omit auth to disable it
   // Optional. Enables password reset emails; password comes from MUNGIL_SMTP_PASSWORD.
@@ -209,6 +225,7 @@ export default {
       { name: 'author_id', type: 'text', required: true }, // an auth.uid value
       { name: 'title', type: 'text', required: true },
       { name: 'published', type: 'boolean', default: false },
+      { name: 'cover', type: 'file', maxBytes: 2_000_000, allowedTypes: ['image/'] },
     ],
     rules: {
       list:   'published == true | auth.uid == author_id',
