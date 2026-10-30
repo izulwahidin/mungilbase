@@ -58,13 +58,8 @@ launch; **out** = deliberately not handled.
 | Stolen refresh token reuse | done | Single-use rotation; replay revokes the whole family inside one transaction |
 | Session fixation | done | Server-issued session ids; clients cannot supply or choose them |
 | Bearer token in URL | done | Tokens accepted only from the `Authorization` header |
-| OAuth login CSRF | done | 256-bit state in an HttpOnly cookie, constant-time compared, 10-minute TTL |
-| OAuth account takeover via unverified email | done | Provider email must be verified; GitHub addresses come from `/user/emails`, never the public profile field |
-| Tokens exposed in the OAuth redirect | partial | Tokens are returned in the URL fragment (not sent to servers or Referer); they can remain in browser history until the tab is closed |
 | Password reset token theft | done | 256-bit tokens hashed at rest, single-use, 30 min default TTL, replaced on re-request, reset revokes all sessions |
 | Reset link leaking through logs | done | The `log` email provider is refused when `NODE_ENV=production` |
-| Unverified addresses used for access | done (opt-in) | `emailVerification.required` blocks login with `403 email_not_verified`; `auth.verified` is available to rules |
-| Email verification token theft | done | 256-bit hashed, single-use, 24-hour default TTL, replaced on resend |
 
 ### Tampering
 
@@ -114,7 +109,6 @@ launch; **out** = deliberately not handled.
 | Login brute force | done | Fixed windows per account (5/15 min) and per IP (30/10 min), counters persisted in SQLite; `Retry-After` returned |
 | Query flood / slow filters | done (bounded) | Concurrency cap sheds excess with `503 overloaded`; filters on hot columns should be indexed via config |
 | Storage exhaustion via uploads | partial | Per-file `maxBytes`, MIME allowlists, automatic cleanup on replace/delete and `files:gc`; no per-account quota yet |
-| S3 credential misuse | done (design) | Credentials only from env vars, least-privilege bucket policy on one prefix, no credentials in config or logs |
 | Oversized expressions | done | 2,000 character rule cap, 64-level nesting cap |
 | Large request bodies | done | 1 MB cap enforced before parsing, plus a post-read byte check |
 | Connection exhaustion | done (single node) | `busy_timeout`, WAL, single-process writes, and load shedding |
@@ -144,8 +138,8 @@ launch; **out** = deliberately not handled.
 
 ## Open questions to resolve before launch
 
-1. Email verification and OAuth are not implemented. Password reset is, when
-   `email` is configured; otherwise a locked-out user needs `user:passwd`.
+1. Password reset is available when `email` is configured; otherwise a
+   locked-out user needs `user:passwd`.
 2. Is `auth.uid == null` matching rows with `owner_id IS NULL` intended? The
    current compiler says yes (SQLite `IS`). Confirm before shipping rules that
    allow null owners.

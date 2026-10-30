@@ -17,7 +17,6 @@ import {
   migrate,
   openapi,
   resetPassword,
-  sdk,
   setRole,
 } from './commands.js'
 import { dev } from './dev.js'
@@ -69,24 +68,16 @@ interface ParsedArgs {
 
 const COMMANDS = new Set([
   'start',
-  'serve',
   'dev',
   'init',
   'migrate',
   'mcp',
   'doctor',
-  'check',
   'gen',
   'openapi',
-  'sdk',
   'backup',
   'files',
-  'files-gc',
   'user',
-  'create-user',
-  'passwd',
-  'reset-password',
-  'set-role',
   'help',
   'version',
 ])
@@ -191,8 +182,7 @@ async function dispatch(
   }
 
   switch (command) {
-    case 'start':
-    case 'serve': {
+    case 'start': {
       const configPath = args[0] ?? parsed.config
       await startServer({
         configPath,
@@ -277,7 +267,6 @@ async function dispatch(
       })
       return
     case 'doctor':
-    case 'check':
       await doctor({ ...options, json: parsed.json })
       return
     case 'gen': {
@@ -293,37 +282,16 @@ async function dispatch(
     case 'openapi':
       await openapi({ ...options, output: args[0] ?? parsed.output })
       return
-    case 'sdk':
-      await sdk({ ...options, output: args[0] ?? parsed.output })
-      return
     case 'backup':
       await backup({ ...options, destination: args[0] })
       return
-    case 'files':
-    case 'files-gc': {
+    case 'files': {
       const apply = parsed.apply || args.includes('--apply')
       await filesGc({ ...options, apply })
       return
     }
     case 'user':
       return dispatchUser(args, parsed, options, io)
-    case 'create-user': {
-      const email = requireArg(args[0], 'user create needs an email address')
-      await createAccount(email, parsed, options, io)
-      return
-    }
-    case 'passwd':
-    case 'reset-password': {
-      const email = requireArg(args[0], 'user passwd needs an email address')
-      await changePassword(email, parsed, options, io)
-      return
-    }
-    case 'set-role': {
-      const email = requireArg(args[0], 'user role needs an email address')
-      const role = requireArg(args[1], 'user role needs a role (user or admin)')
-      await setRole(email, role, options)
-      return
-    }
     default:
       throw new UsageError(`unknown command "${command}"`)
   }
@@ -342,9 +310,7 @@ async function dispatchUser(
       await createAccount(email, parsed, options, io)
       return
     }
-    case 'passwd':
-    case 'password':
-    case 'reset': {
+    case 'passwd': {
       const email = requireArg(rest[0], 'user passwd needs an email address')
       await changePassword(email, parsed, options, io)
       return
@@ -698,9 +664,8 @@ Commands
   migrate               Apply migrations and sync the schema
   mcp                   Serve the MCP tools for AI agents over stdio
   doctor                Validate the config and print a summary
-  gen                   Write openapi.json and the TypeScript client
+  gen                   Write openapi.json when it is missing or stale
   openapi [file]        Write the OpenAPI 3.1 document (default ./openapi.json)
-  sdk [file]            Generate the TypeScript client (default ./sdk/mungil-client.ts)
   backup [dir|file]     Take a verified online backup (default ./backups)
   files gc              Collect unreferenced uploads (dry run; --apply deletes)
   user create <email>   Create an account (--generate-password prints one once)
@@ -714,7 +679,7 @@ Options
   -c, --config <path>   Config file (default: first mungil.config.* here)
       --host <host>     Listen address for start/dev
       --port <port>     Listen port for start/dev
-  -o, --output <path>   Output path for openapi/sdk
+  -o, --output <path>   Output path for openapi
       --role <role>     Role for user create (default: MUNGIL_USER_ROLE or user)
       --generate-password
                         user create/passwd: generate a password and print it once

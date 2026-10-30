@@ -202,14 +202,6 @@ MUNGIL_METRICS_TOKEN=
 # Optional Sentry-compatible DSN.
 MUNGIL_SENTRY_DSN=
 
-# OAuth client secrets.
-MUNGIL_GOOGLE_CLIENT_SECRET=
-MUNGIL_GITHUB_CLIENT_SECRET=
-
-# S3-compatible object storage (storage.provider = "s3").
-MUNGIL_S3_ACCESS_KEY_ID=
-MUNGIL_S3_SECRET_ACCESS_KEY=
-
 # Used once by \`mungilbase user create|passwd\`.
 # Prefer --password-stdin or --generate-password so it never lands in shell history.
 MUNGIL_USER_PASSWORD=
@@ -230,9 +222,6 @@ backups/
 .env
 .env.*
 !.env.example
-
-# Keep generated clients if you want; uncomment to ignore.
-# sdk/
 `
 
 const STARTER_INDEX_HTML = `<!doctype html>
@@ -676,7 +665,7 @@ async function seedDemo(
 
     const table = registry.get('todos')
     if (!table) throw new Error('The demo config must declare a "todos" table')
-    const auth = { uid: user.id, role: user.role, verified: user.emailVerified, admin: false }
+    const auth = { uid: user.id, role: user.role, admin: false }
     const seeds = ['Try the todo API', 'Connect the MCP server to your agent', 'Read docs/getting-started.md']
     seeds.forEach((title, index) => {
       createRow(db, table, auth, { owner_id: user.id, title, done: index === 0 })

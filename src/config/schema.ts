@@ -104,45 +104,6 @@ export const authConfigSchema = z
       })
       .strict()
       .prefault({}),
-    emailVerification: z
-      .object({
-        enabled: z.boolean().default(false),
-        /** Reject logins until the address is verified. */
-        required: z.boolean().default(false),
-        tokenTtlSeconds: z.number().int().min(300).max(604_800).default(86_400),
-        maxRequestsPerHour: z.number().int().min(1).max(100).default(3),
-        /** Frontend URL that receives `?token=…`. Defaults to `${appUrl}/verify-email`. */
-        verifyUrl: z.string().url().optional(),
-      })
-      .strict()
-      .prefault({}),
-    oauth: z
-      .object({
-        google: z
-          .object({
-            clientId: z.string().min(1),
-            clientSecretEnv: z
-              .string()
-              .regex(/^[A-Z][A-Z0-9_]*$/)
-              .default('MUNGIL_GOOGLE_CLIENT_SECRET'),
-            callbackUrl: z.string().url().optional(),
-          })
-          .strict()
-          .optional(),
-        github: z
-          .object({
-            clientId: z.string().min(1),
-            clientSecretEnv: z
-              .string()
-              .regex(/^[A-Z][A-Z0-9_]*$/)
-              .default('MUNGIL_GITHUB_CLIENT_SECRET'),
-            callbackUrl: z.string().url().optional(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
   })
   .strict()
 
@@ -200,43 +161,15 @@ export const tableSchema = z
 
 export const storageConfigSchema = z
   .object({
-    provider: z.enum(['local', 's3']).default('local'),
+    /** Files live on local disk: one process, one directory. */
     local: z
       .object({
         dir: z.string().min(1).default('./data/files'),
       })
       .strict()
       .prefault({}),
-    s3: z
-      .object({
-        bucket: z.string().min(1).max(255),
-        region: z.string().min(1).default('auto'),
-        /** S3-compatible endpoint, e.g. https://minio.example.com */
-        endpoint: z.string().url().optional(),
-        forcePathStyle: z.boolean().default(true),
-        prefix: z.string().max(200).default(''),
-        accessKeyIdEnv: z
-          .string()
-          .regex(/^[A-Z][A-Z0-9_]*$/)
-          .default('MUNGIL_S3_ACCESS_KEY_ID'),
-        secretAccessKeyEnv: z
-          .string()
-          .regex(/^[A-Z][A-Z0-9_]*$/)
-          .default('MUNGIL_S3_SECRET_ACCESS_KEY'),
-      })
-      .strict()
-      .optional(),
   })
   .strict()
-  .superRefine((storage, ctx) => {
-    if (storage.provider === 's3' && !storage.s3) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['s3'],
-        message: 's3 settings are required when provider is "s3"',
-      })
-    }
-  })
 
 export const configSchema = z
   .object({
@@ -256,7 +189,6 @@ export const configSchema = z
       .prefault({}),
     /** Browser origins allowed to call the API. Empty means same-origin only. */
     allowedOrigins: z.array(z.string().url()).default([]),
-    logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     /**
      * Serve a frontend from this process, so `npx mungilbase start` is the
      * whole app: static files on `/`, the API on `/api/v1`.
@@ -398,30 +330,6 @@ export const configSchema = z
       }
     }
 
-    if (config.auth?.oauth && !config.appUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['appUrl'],
-        message: 'OAuth needs appUrl to build callback URLs',
-      })
-    }
-
-    if (config.auth?.emailVerification.enabled) {
-      if (!config.email) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['email'],
-          message: 'Email verification requires an email provider',
-        })
-      }
-      if (!config.appUrl && !config.auth.emailVerification.verifyUrl) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['appUrl'],
-          message: 'Email verification needs appUrl or auth.emailVerification.verifyUrl',
-        })
-      }
-    }
   })
 
 export type FieldType = z.infer<typeof fieldTypeSchema>

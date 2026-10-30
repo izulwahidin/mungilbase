@@ -7,7 +7,7 @@ authentication, row-level rules, migrations, and an MCP server for AI agents.
 Ships as an npm package and a typed library; runs as a single Node process with
 SQLite.
 
-> **Status: v0.6.0 (pre-1.0).** Feature-complete for a single-node self-hosted
+> **Status: v0.8.0 (pre-1.0).** Feature-complete for a single-node self-hosted
 > deployment, but it has not been through an external security audit or a
 > production load test. Read [What works today](#what-works-today) and the
 > [production gate](#production-gate) before relying on it.
@@ -31,7 +31,7 @@ transactional gaps. MungilBase is deliberately the boring option:
 
 ## Install
 
-Requires Node.js 22 or newer.
+Requires Node.js 22.18 or newer (for built-in TypeScript config loading).
 
 ```bash
 # or pin it: npm install --save-dev mungilbase
@@ -71,10 +71,9 @@ Everything the CLI can do:
 npx mungilbase --help
 npx mungilbase doctor                 # validate config + every rule
 npx mungilbase dev                    # restart + regenerate when the config changes
-npx mungilbase gen                    # openapi.json + typed SDK
-npx mungilbase gen --check            # fail when generated files are stale
+npx mungilbase gen                    # openapi.json when missing or stale
+npx mungilbase gen --check            # fail when openapi.json is stale
 npx mungilbase openapi ./openapi.json
-npx mungilbase sdk ./sdk/client.ts
 npx mungilbase backup ./backups
 npx mungilbase files gc               # dry run; --apply deletes
 npx mungilbase mcp --check            # exercise the MCP server
@@ -90,13 +89,14 @@ See [docs/cli.md](docs/cli.md) for the full command reference and
 ### Use as a library
 
 ```ts
-import { loadConfig, startServer, generateSdk, openMcpContext } from 'mungilbase'
+import { loadConfig, startServer, buildOpenApi } from 'mungilbase'
 import type { MungilConfigInput } from 'mungilbase/config'
 ```
 
-The package exports the config schema and loader, server boot, OpenAPI builder,
-SDK generator, and MCP server. Importing `mungilbase` never opens a database or
-starts a listener. See
+The root export is the config schema and loader, server boot, OpenAPI builder
+and CLI helpers. The MCP server lives behind the `mungilbase/mcp` subpath, so
+importing the root never loads the MCP SDK. Importing `mungilbase` never opens
+a database or starts a listener. See
 [Using it as a library](docs/cli.md#using-it-as-a-library).
 
 ### From source
@@ -177,34 +177,8 @@ Registered only when the config has an `auth` block.
 | `POST` | `/api/v1/auth/refresh` | rotates access **and** refresh tokens |
 | `POST` | `/api/v1/auth/request-password-reset` | `202` always; needs `email` config |
 | `POST` | `/api/v1/auth/reset-password` | consumes a single-use token, revokes sessions |
-| `POST` | `/api/v1/auth/verify-email` | consumes a single-use verification token |
-| `POST` | `/api/v1/auth/resend-verification` | authenticated, throttled; needs `emailVerification` |
 | `POST` | `/api/v1/auth/logout` | `204`, revokes the session |
 | `GET` | `/api/v1/auth/me` | current user; `401` without a token |
-
-### OAuth
-
-Google and GitHub are supported when configured:
-
-```ts
-auth: {
-  oauth: {
-    google: { clientId: '…' },   // secret: MUNGIL_GOOGLE_CLIENT_SECRET
-    github: { clientId: '…' },   // secret: MUNGIL_GITHUB_CLIENT_SECRET
-  },
-}
-```
-
-| Method | Path |
-|---|---|
-| `GET` | `/api/v1/auth/oauth/:provider/start` |
-| `GET` | `/api/v1/auth/oauth/:provider/callback` |
-
-The callback redirects to `${appUrl}/auth/callback` with tokens in the URL
-**fragment** (`#access_token=…&refresh_token=…`), which is never sent to a
-server or in a Referer header. Accounts are linked by provider-verified email;
-an unverified provider email is rejected. Register the callback URL
-`${appUrl}/api/v1/auth/oauth/{google|github}/callback` in the provider console.
 
 Sessions are opaque 256-bit tokens stored as SHA-256 hashes in SQLite, not
 JWTs. That makes logout and revocation immediate instead of "eventually, when
@@ -226,24 +200,9 @@ the row update; if the update rule denies, the file is deleted again. Replacing
 a file deletes the old object, and deleting a row deletes the files it
 referenced.
 
-Storage is local disk by default (`storage.local.dir`, `./data/files`).
-S3-compatible backends work too:
-
-```ts
-storage: {
-  provider: 's3',
-  s3: {
-    bucket: 'mungil-files',
-    region: 'auto',
-    endpoint: 'https://minio.example.com', // omit for AWS
-    prefix: 'mungil',
-    // credentials read from MUNGIL_S3_ACCESS_KEY_ID / MUNGIL_S3_SECRET_ACCESS_KEY
-  },
-}
-```
-
-The bucket needs Put/Get/Delete/List on the configured prefix. Files are not
-part of the SQLite backup; use bucket versioning or replicate them separately.
+Storage is local disk only (`storage.local.dir`, `./data/files`): one process,
+one file tree, no cloud credentials. Files are not part of the SQLite backup,
+so copy that directory with the database.
 
 Objects can still be orphaned by a crash between the row write and the delete.
 Collect them with:
@@ -263,12 +222,6 @@ Password reset is enabled only when `email` is configured and `appUrl` or
 only; refuses to start under `NODE_ENV=production`) or `smtp`. Tokens are
 hashed at rest, single-use, 30 minutes by default, and a reset revokes every
 session for the account.
-
-Email verification is off by default. Set `auth.emailVerification.enabled` to
-send a link on registration, and `required: true` to reject logins until the
-address is verified. Resending needs a session and is throttled. Accounts
-created with `mungilbase user create` start verified, since the operator
-vouched for them.
 
 Users have a closed role: `user` or `admin`. Promotion alone does **not**
 bypass table rules; set `auth.adminBypassRules: true` if admins should see and
@@ -345,20 +298,6 @@ same origin. A separate dev server (Vite, Next) still works — add its origin t
 same config that drives routing: table schemas, create/update shapes, query
 parameters, error responses, and auth paths. It cannot describe an endpoint
 that does not exist.
-
-### TypeScript SDK
-
-```bash
-npx mungilbase sdk                     # -> ./sdk/mungil-client.ts
-npx mungilbase sdk ./sdk/client.ts     # explicit output
-npm run sdk                            # from a source checkout
-```
-
-Generates a dependency-free typed client from the config: read/create/update
-interfaces per table, `list/get/create/update/delete` methods, file upload and
-download helpers, auth methods (`login`, `register`, `refresh`, `logout`, `me`),
-and a typed `MungilApiError`. The generated file compiles on its own; CI
-typechecks it on every run.
 
 ### MCP for AI agents
 
@@ -508,7 +447,7 @@ SQL with bound parameters, and never string-concatenated with values.
 | | |
 |---|---|
 | Values | `'text'`, `42`, `1.5`, `true`, `false`, `null` |
-| Auth | `auth.uid` (the signed-in user's id, or `null`), `auth.verified` (boolean) |
+| Auth | `auth.uid` (the signed-in user's id, or `null`) |
 | Columns | bare names: `owner_id`, `published` |
 | Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` (null-safe) |
 | Logic | `&` (AND), `\|` (OR), `!` (NOT) |
@@ -536,20 +475,17 @@ anonymous requests rather than an empty result.
       family revocation, logout, per-account and per-IP login throttling
 - [x] Self-service password reset via SMTP (or a development log provider),
       with hashed single-use tokens and full session revocation
-- [x] Email verification with an optional login gate and `auth.verified` rules
-- [x] OAuth login with Google and GitHub, linking by provider-verified email
 - [x] Roles (`user`, `admin`) with explicit admin rule bypass
 - [x] Web admin panel at `/admin`: browser first-run setup, data browser, schema
       editor that writes the config file, settings overview, CSRF-protected forms
-- [x] File uploads to local or S3-compatible storage, with size/MIME limits,
+- [x] File uploads to local disk, with size/MIME limits,
       rule checks, automatic cleanup on replace/delete, and `files:gc`
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`
-- [x] TypeScript SDK generated from the config (`npx mungilbase sdk`)
 - [x] Append-only audit log for denials, throttling, 401s, 5xx, auth and admin events
 - [x] Prometheus `/metrics`, load shedding, optional Sentry-compatible reporting
 - [x] Verified online backups + automated restore drill (runs in CI)
 - [x] `npx mungilbase` CLI (`init`, `start`, `migrate`, `doctor`, `openapi`,
-      `sdk`, `backup`, `files gc`, `mcp`, user management) and a typed library export
+      `gen`, `backup`, `files gc`, `mcp`, user management) and a typed library export
 - [x] MCP server for AI agents (stdio), rules-enforced, read-only by default,
       with optional identity/table allowlist/write tools and Supabase-style
       admin tools (migrations, users, backups, audit) plus opt-in raw SQL

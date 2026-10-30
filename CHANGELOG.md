@@ -2,12 +2,42 @@
 
 All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] — 2026-10-31
+
+### Removed
+
+- **S3-compatible storage.** File storage is local disk only
+  (`storage.local.dir`). The `storage.provider` and `storage.s3` keys, the
+  `@aws-sdk/client-s3` dependency and the S3 tests are gone. A single process
+  with a copyable data directory is the product.
+- **OAuth login** (Google and GitHub): `auth.oauth`, the redirect routes, the
+  link-by-email flow and their tests/docs. Email + password remains.
+- **Email verification**: `auth.emailVerification`, the verify/resend routes,
+  verification tokens, the `auth.verified` rule field and `emailVerified` on the
+  public user shape. Password reset is unchanged.
+- **TypeScript SDK generator**: `mungilbase sdk`, the `generate_sdk` MCP tool,
+  the SDK compile step in CI and its tests. OpenAPI generation stays.
+- **`tsx` at runtime**: TypeScript configs now load through Node's built-in
+  type stripping (Node 22.18+). `tsx` moved to devDependencies, so production
+  installs no longer pay for esbuild.
+- **Dead config and CLI surface**: the unused `logLevel` key, the `serve`,
+  `check`, `files-gc`, `create-user`, `reset-password` and `set-role` command
+  aliases, and the unused `rulesFor`/`configDirectory` exports.
+- The read-only "Effective JSON" dump on the admin Settings page.
+
+### Changed
+
+- `npm run gen` now writes only `openapi.json`; `doctor` reports only that
+  artifact.
+- `engines.node` is `>=22.18`.
+- The root library export no longer re-exports the MCP server, so importing
+  `mungilbase` does not load `@modelcontextprotocol/sdk`. Use
+  `mungilbase/mcp` instead.
 
 ### Added
 
 - **Browser first-run setup.** A deployment with no `admin` account serves
-  `/admin/setup`, which creates the first administrator (verified, audited as
+  `/admin/setup`, which creates the first administrator (audited as
   `auth.admin_setup`) and signs them in. The screen closes as soon as an admin
   exists, and two racing submissions leave exactly one account.
 - **Schema editor.** `/admin/schema` creates, edits and removes tables from the

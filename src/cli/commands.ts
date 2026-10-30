@@ -16,7 +16,6 @@ import { AuthService } from '../auth/service.js'
 import { isAuthRole } from '../auth/roles.js'
 import { createStorage } from '../storage/storage.js'
 import { runFileGc } from '../storage/gc.js'
-import { generateSdk } from '../sdk/generate.js'
 import { buildOpenApi } from '../openapi/spec.js'
 import { VERSION } from '../version.js'
 import type { MungilConfig } from '../config/schema.js'
@@ -28,7 +27,7 @@ export interface CommandOptions {
 }
 
 export interface ArtifactStatus {
-  kind: 'openapi' | 'sdk'
+  kind: 'openapi'
   path: string
   /** True when the file is missing or differs from what the config generates. */
   stale: boolean
@@ -94,7 +93,7 @@ export async function doctor(
     appUrl: config.appUrl ?? null,
     static: config.static ? resolve(config.static.dir) : null,
     auth: config.auth ? 'enabled' : 'disabled',
-    storage: config.storage?.provider ?? 'none',
+    storage: config.storage ? 'local' : 'none',
     envFile: envFile.path ? { path: envFile.path, exists: true } : null,
     mcp: config.mcp
       ? {
@@ -188,36 +187,20 @@ export async function openapi(
   log({ event: 'openapi_generated', config: configPath, output })
 }
 
-/** Generates the dependency-free typed TypeScript client. */
-export async function sdk(options: CommandOptions & { output?: string } = {}): Promise<void> {
-  const configPath = findConfigPath(options.configPath)
-  const config = await loadConfig(configPath)
-  const output = resolve(options.output ?? './sdk/mungil-client.ts')
-  const code = generateSdk(config, { version: options.version ?? VERSION })
-
-  await mkdir(dirname(output), { recursive: true })
-  await writeFile(output, code, 'utf8')
-  log({
-    event: 'sdk_generated',
-    config: configPath,
-    output,
-    bytes: Buffer.byteLength(code, 'utf8'),
-  })
-}
-
-/** Generates the OpenAPI document and the typed client in one step. */
+/** Writes `openapi.json` when it is missing or stale. */
 export async function gen(
   options: CommandOptions & { check?: boolean } = {},
 ): Promise<{ artifacts: ArtifactStatus[]; stale: ArtifactStatus[] }> {
   const configPath = findConfigPath(options.configPath)
   const config = await loadConfig(configPath)
+  const planned = await plannedArtifacts(config, options.version ?? VERSION)
   const artifacts = await artifactStatus(config, options.version ?? VERSION)
 
-  for (const artifact of artifacts) {
-    if (!artifact.stale || options.check) continue
-    const contents = await artifactContents(config, options.version ?? VERSION, artifact.kind)
+  for (const artifact of planned) {
+    const status = artifacts.find((candidate) => candidate.kind === artifact.kind)
+    if (!status?.stale || options.check) continue
     await mkdir(dirname(artifact.path), { recursive: true })
-    await writeFile(artifact.path, contents, 'utf8')
+    await writeFile(artifact.path, artifact.contents, 'utf8')
     log({ event: `${artifact.kind}_generated`, config: configPath, output: artifact.path })
   }
 
@@ -228,32 +211,14 @@ async function plannedArtifacts(
   config: MungilConfig,
   version: string,
 ): Promise<Array<ArtifactStatus & { contents: string }>> {
-  const openapiPath = resolve('./openapi.json')
-  const sdkPath = resolve('./sdk/mungil-client.ts')
   return [
     {
       kind: 'openapi',
-      path: openapiPath,
+      path: resolve('./openapi.json'),
       contents: `${JSON.stringify(buildOpenApi(config, version), null, 2)}\n`,
       stale: true,
     },
-    {
-      kind: 'sdk',
-      path: sdkPath,
-      contents: generateSdk(config, { version }),
-      stale: true,
-    },
   ]
-}
-
-async function artifactContents(
-  config: MungilConfig,
-  version: string,
-  kind: ArtifactStatus['kind'],
-): Promise<string> {
-  const artifacts = await plannedArtifacts(config, version)
-  const match = artifacts.find((artifact) => artifact.kind === kind)
-  return match?.contents ?? ''
 }
 
 /** Compares what the config generates with what is on disk. */

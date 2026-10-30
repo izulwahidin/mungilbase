@@ -17,7 +17,6 @@ export interface McpIdentity {
   id: string
   email: string
   role: AuthRole
-  emailVerified: boolean
 }
 
 export interface CreateMcpServerOptions {

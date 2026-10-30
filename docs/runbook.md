@@ -211,20 +211,6 @@ named by `email.smtp.passwordEnv` (default `MUNGIL_SMTP_PASSWORD`). The `log`
 provider is refused when `NODE_ENV=production`, because it would write reset
 links into the log stream.
 
-### Email verification
-
-Enable with `auth.emailVerification.enabled: true`. Registration then sends a
-link; `required: true` rejects logins with `403 email_not_verified` until the
-address is confirmed. Tokens are hashed, single-use and expire after 24 hours.
-`resend-verification` requires a session and is throttled.
-
-Accounts created with `mungilbase user create` are verified by default. To audit
-unverified accounts:
-
-```sql
-SELECT "email", "created_at" FROM "_mungil_auth_users" WHERE "email_verified" = 0;
-```
-
 ### Suspected stolen session token
 
 `user:passwd` revokes all sessions for the account. To revoke without changing
@@ -283,15 +269,12 @@ application itself never does it.
 
 ## Files
 
-Uploaded files live outside SQLite: `storage.local.dir` (default
-`./data/files`) or an S3-compatible bucket. They are **not** included in
-`mungilbase backup` or Litestream.
+Uploaded files live outside SQLite in `storage.local.dir` (default
+`./data/files`). They are **not** included in `mungilbase backup` or Litestream.
 
-- Local disk: back the directory up separately (filesystem snapshot or
-  `rsync`). If you need DB and files consistent, pause writes, snapshot the DB,
-  then sync the files.
-- S3: enable bucket versioning or replicate the bucket. The identity used by the
-  app needs Put/Get/Delete/List on the configured prefix and nothing else.
+- Back the directory up separately (filesystem snapshot or `rsync`). If you
+  need DB and files consistent, pause writes, snapshot the DB, then sync the
+  files.
 - Deleting a row deletes its files; replacing a file deletes the old object.
   A crash between the DB write and the object delete can still leave orphans.
   Keys are `<table>/<id-hash>/<field>/<uuid>.<ext>`.
@@ -377,41 +360,28 @@ role because it is read from the database, not embedded in the token.
 
 Promotion alone does **not** bypass table rules. If your admin UI needs to see
 and edit every row, set `auth.adminBypassRules: true` and understand the
-trade-off: any admin token can then read and write everything, and admin writes
-are not yet separately audited.
-
-## OAuth setup
-
-1. Create an OAuth app with the provider (Google Cloud Console or GitHub
-   Developer Settings).
-2. Callback URL: `${appUrl}/api/v1/auth/oauth/google/callback` or
-   `.../github/callback` (or the per-provider `callbackUrl`).
-3. Put the client id in config and the secret in the environment variable named
-   by `clientSecretEnv` (default `MUNGIL_GOOGLE_CLIENT_SECRET` /
-   `MUNGIL_GITHUB_CLIENT_SECRET`). Missing secrets fail at startup.
-4. Send users to `GET /api/v1/auth/oauth/{provider}/start`.
-
-Accounts are linked by provider-verified email. A provider email that is not
-verified is rejected; existing password accounts are linked and marked
-verified. The callback redirects to `${appUrl}/auth/callback` with tokens in
-the fragment, so the frontend must read `location.hash` and store them.
-
-There is no UI for unlinking a provider or listing linked providers; accounts
-are keyed by email, not by provider id.
+trade-off: any admin token can then read and write everything. Admin row writes
+and schema edits are audited (`admin.create`, `admin.update`, `admin.delete`,
+`admin.schema_update`).
 
 ## Admin panel
 
-Reachable at `https://your-host/admin`. Only `admin` accounts can sign in; the
-panel session is a separate HttpOnly cookie valid for 8 hours
-(`auth.adminSessionTtlSeconds`) and every form has a CSRF token.
+Reachable at `https://your-host/admin`. A deployment with no `admin` account
+shows the one-time `/admin/setup` screen; claim it before exposing the host.
+Only `admin` accounts can sign in afterwards; the panel session is a separate
+HttpOnly cookie valid for 8 hours (`auth.adminSessionTtlSeconds`) and every form
+has a CSRF token.
 
 - The panel uses the same ruled CRUD layer as the API. If an admin sees nothing
   in a table, the table rules are hiding rows — enable `adminBypassRules` only
   if that is the intended trade-off.
 - Set `appUrl` to your HTTPS origin so the admin and CSRF cookies get the
   `Secure` flag.
-- Admin activity is audited: `auth.admin_login`, `auth.admin_logout`,
-  `admin.create`, `admin.update`, `admin.delete`.
+- Schema edits rewrite the config file through the panel and keep the previous
+  version as `<config>.bak`; review the diff before deploying.
+- Admin activity is audited: `auth.admin_setup`, `auth.admin_login`,
+  `auth.admin_logout`, `admin.create`, `admin.update`, `admin.delete` and
+  `admin.schema_update`.
 - Logging out revokes the panel session. Changing the account role takes effect
   on the next request; demoting an admin invalidates the panel session on its
   next use.

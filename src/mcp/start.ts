@@ -95,7 +95,6 @@ export async function openMcpContext(options: McpCommandOptions = {}): Promise<M
       ? {
           uid: identity.id,
           role: identity.role,
-          verified: identity.emailVerified,
           admin: bypass,
         }
       : anonymous
@@ -151,10 +150,6 @@ async function resolveIdentity(
       `No account with email ${email}. Create one with \`mungilbase user create ${email}\`.`,
     )
   }
-  if (config.auth?.emailVerification.required && !user.emailVerified) {
-    throw new Error(`Account ${email} is not email-verified.`)
-  }
-
   return user
 }
 

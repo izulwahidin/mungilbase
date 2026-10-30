@@ -20,20 +20,19 @@ afterEach(async () => {
 })
 
 describe('mungilbase gen', () => {
-  it('writes openapi.json and the SDK, then reports them as current', async () => {
+  it('writes openapi.json, then reports it as current', async () => {
     const directory = await workspace()
     await init({ directory, demo: true })
     process.chdir(directory)
 
     const first = await gen({ configPath: join(directory, 'mungil.config.ts') })
-    expect(first.stale.map((artifact) => artifact.kind).sort()).toEqual(['openapi', 'sdk'])
+    expect(first.stale.map((artifact) => artifact.kind)).toEqual(['openapi'])
     expect(first.stale.every((artifact) => artifact.stale)).toBe(true)
 
     const openapi = JSON.parse(await readFile(join(directory, 'openapi.json'), 'utf8')) as {
       paths: Record<string, unknown>
     }
     expect(Object.keys(openapi.paths)).toContain('/api/v1/todos')
-    expect(await readFile(join(directory, 'sdk', 'mungil-client.ts'), 'utf8')).toContain('todos')
 
     const second = await gen({ configPath: join(directory, 'mungil.config.ts'), check: true })
     expect(second.stale).toEqual([])

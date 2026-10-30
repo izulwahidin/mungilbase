@@ -9,7 +9,6 @@ import type { Db } from '../db/connect.js'
 import { anonymous, type AuthContext } from '../auth/context.js'
 import { AuthService } from '../auth/service.js'
 import { bearerToken } from '../auth/bearer.js'
-import { createOAuthProviders, type OAuthProviders } from '../auth/oauth.js'
 import { recordAudit } from '../audit/log.js'
 import { createMailer, type Mailer } from '../email/mailer.js'
 import { MetricsCollector } from '../metrics/collector.js'
@@ -25,7 +24,6 @@ import { registerAdminRoutes } from './routes/admin.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCrudRoutes } from './routes/crud.js'
 import { registerFileRoutes } from './routes/files.js'
-import { registerOAuthRoutes } from './routes/oauth.js'
 import { registerStaticRoutes } from './static.js'
 
 export interface AppEnv {
@@ -50,8 +48,6 @@ export interface AppDeps {
   mailer?: Mailer
   /** Optional Sentry-compatible reporter for unhandled errors. */
   reportError?: ErrorReporter
-  /** Overrides provider clients built from config; tests use it. */
-  oauthProviders?: OAuthProviders
   /**
    * Absolute path of the config file this app was built from. When set, the
    * admin panel can edit tables and write them back; without it the schema
@@ -68,9 +64,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const mailer = deps.mailer ?? (deps.config.email ? createMailer(deps.config.email) : undefined)
   const storage = createStorage(deps.config.storage)
   const authService = deps.db && deps.config.auth ? new AuthService(deps.db, deps.config.auth) : null
-  const oauthProviders =
-    deps.oauthProviders ??
-    (deps.config.auth?.oauth ? createOAuthProviders(deps.config) : new Map())
 
   // A test hook can replace token verification entirely; production uses the
   // DB-backed opaque tokens below.
@@ -86,7 +79,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
         uid: session.userId,
         sessionId: session.sessionId,
         role: session.role,
-        verified: session.emailVerified,
         admin: session.role === 'admin' && (deps.config.auth?.adminBypassRules ?? false),
       }
     })
@@ -144,15 +136,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       config: deps.config,
       mailer,
     })
-
-    if (oauthProviders.size) {
-      registerOAuthRoutes(app, {
-        service: authService,
-        db: deps.db,
-        config: deps.config,
-        providers: oauthProviders,
-      })
-    }
   }
   if (authService && deps.db) {
     registerAdminRoutes(app, {

@@ -241,12 +241,11 @@ function addAuth(schemas: Record<string, Schema>, paths: Record<string, PathItem
   }
   schemas.AuthUser = {
     type: 'object',
-    required: ['id', 'email', 'role', 'emailVerified'],
+    required: ['id', 'email', 'role'],
     properties: {
       id: { type: 'string' },
       email: { type: 'string' },
       role: { type: 'string', enum: ['user', 'admin'] },
-      emailVerified: { type: 'boolean' },
     },
   }
   schemas.TokenPair = {
@@ -413,52 +412,6 @@ function addPasswordReset(paths: Record<string, PathItem>): void {
   }
 }
 
-function addEmailVerification(paths: Record<string, PathItem>): void {
-  paths['/api/v1/auth/verify-email'] = {
-    post: {
-      summary: 'Verify an email address',
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['token'],
-              additionalProperties: false,
-              properties: { token: { type: 'string' } },
-            },
-          },
-        },
-      },
-      responses: {
-        200: jsonResponse('Verified', {
-          type: 'object',
-          required: ['status'],
-          properties: { status: { type: 'string', const: 'ok' } },
-        }),
-        400: errorResponse('Invalid, expired or reused token'),
-      },
-      security: [],
-    },
-  }
-
-  paths['/api/v1/auth/resend-verification'] = {
-    post: {
-      summary: 'Resend the verification email',
-      responses: {
-        202: jsonResponse('Accepted', {
-          type: 'object',
-          required: ['status'],
-          properties: { status: { type: 'string', const: 'accepted' } },
-        }),
-        401: errorResponse('Missing or invalid access token'),
-        429: errorResponse('Too many requests'),
-      },
-      security: [{ bearerAuth: [] }],
-    },
-  }
-}
-
 /**
  * Builds an OpenAPI 3.1 document from the same config that drives routing.
  * The spec cannot drift from the API for anything it describes.
@@ -471,7 +424,6 @@ export function buildOpenApi(config: MungilConfig, version: string): Record<stri
   if (config.auth) {
     addAuth(schemas, paths)
     if (config.email && config.auth.passwordReset.enabled) addPasswordReset(paths)
-    if (config.email && config.auth.emailVerification.enabled) addEmailVerification(paths)
   }
 
   return {

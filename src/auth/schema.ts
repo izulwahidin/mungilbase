@@ -5,7 +5,6 @@ export const AUTH_TABLES = {
   sessions: '_mungil_auth_sessions',
   tokens: '_mungil_auth_tokens',
   resets: '_mungil_auth_password_resets',
-  verifications: '_mungil_email_verifications',
   adminSessions: '_mungil_admin_sessions',
   throttle: '_mungil_rate_limits',
 } as const
@@ -22,7 +21,6 @@ export function ensureAuthSchema(db: Db): void {
       "email" TEXT NOT NULL UNIQUE,
       "password_hash" TEXT NOT NULL,
       "role" TEXT NOT NULL DEFAULT 'user' CHECK ("role" IN ('user', 'admin')),
-      "email_verified" INTEGER NOT NULL DEFAULT 0 CHECK ("email_verified" IN (0, 1)),
       "created_at" TEXT NOT NULL,
       "updated_at" TEXT NOT NULL
     );
@@ -61,17 +59,6 @@ export function ensureAuthSchema(db: Db): void {
 
     CREATE INDEX IF NOT EXISTS "idx_mungil_resets_user" ON "${AUTH_TABLES.resets}" ("user_id");
 
-    CREATE TABLE IF NOT EXISTS "${AUTH_TABLES.verifications}" (
-      "token_hash" TEXT PRIMARY KEY NOT NULL,
-      "user_id" TEXT NOT NULL REFERENCES "${AUTH_TABLES.users}" ("id") ON DELETE CASCADE,
-      "created_at" TEXT NOT NULL,
-      "expires_at" TEXT NOT NULL,
-      "used_at" TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS "idx_mungil_verifications_user"
-      ON "${AUTH_TABLES.verifications}" ("user_id");
-
     CREATE TABLE IF NOT EXISTS "${AUTH_TABLES.adminSessions}" (
       "token_hash" TEXT PRIMARY KEY NOT NULL,
       "user_id" TEXT NOT NULL REFERENCES "${AUTH_TABLES.users}" ("id") ON DELETE CASCADE,
@@ -100,15 +87,6 @@ export function ensureAuthSchema(db: Db): void {
        ADD COLUMN "role" TEXT NOT NULL DEFAULT 'user' CHECK ("role" IN ('user', 'admin'))`,
     )
   }
-
-  // Existing accounts are treated as verified: nobody should be locked out by
-  // an upgrade, and the operator can still require verification for new ones.
-  if (!userColumns.some((column) => column.name === 'email_verified')) {
-    db.exec(
-      `ALTER TABLE "${AUTH_TABLES.users}"
-       ADD COLUMN "email_verified" INTEGER NOT NULL DEFAULT 1 CHECK ("email_verified" IN (0, 1))`,
-    )
-  }
 }
 
 /**
@@ -118,9 +96,6 @@ export function ensureAuthSchema(db: Db): void {
 export function cleanupAuth(db: Db, nowIso = new Date().toISOString()): void {
   db.prepare(
     `DELETE FROM "${AUTH_TABLES.resets}" WHERE "used_at" IS NOT NULL OR "expires_at" <= ?`,
-  ).run(nowIso)
-  db.prepare(
-    `DELETE FROM "${AUTH_TABLES.verifications}" WHERE "used_at" IS NOT NULL OR "expires_at" <= ?`,
   ).run(nowIso)
   db.prepare(
     `DELETE FROM "${AUTH_TABLES.adminSessions}" WHERE "revoked_at" IS NOT NULL OR "expires_at" <= ?`,

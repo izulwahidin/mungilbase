@@ -141,7 +141,7 @@ describe('resetPassword', () => {
     const token = tokenFrom(mailer.messages[0]!)
 
     const updated = await service.resetPassword(token, 'another good password')
-    expect(updated).toEqual({ id: user.id, email, role: 'user', emailVerified: false })
+    expect(updated).toEqual({ id: user.id, email, role: 'user' })
 
     // Old credentials and sessions are dead.
     expect(await appErrorAsync(() => service.login({ email, password }, { ip: null }))).toMatchObject({

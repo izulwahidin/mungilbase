@@ -112,20 +112,14 @@ describe('buildOpenApi', () => {
     expect(fileSpec.components.schemas.filesRead.properties.upload.anyOf[0].type).toBe('string')
   })
 
-  it('documents email verification when enabled', () => {
-    const verifyConfig = configSchema.parse({
-      appUrl: 'https://api.example.com',
-      auth: { allowSignup: true, emailVerification: { enabled: true } },
-      email: { provider: 'log', from: 'noreply@example.com' },
-      tables: [],
-    })
-    const verifySpec = buildOpenApi(verifyConfig, '1.0.0') as Loose
+  it('no longer documents the removed email verification endpoints', () => {
+    const spec = buildOpenApi(
+      configSchema.parse({ appUrl: 'https://api.example.com', auth: { allowSignup: true }, tables: [] }),
+      '1.0.0',
+    ) as Loose
 
-    expect(Object.keys(verifySpec.paths)).toEqual(
-      expect.arrayContaining(['/api/v1/auth/verify-email', '/api/v1/auth/resend-verification']),
-    )
-    expect(verifySpec.components.schemas.AuthUser.properties.emailVerified.type).toBe('boolean')
-    expect(verifySpec.components.schemas.AuthUser.required).toContain('emailVerified')
+    expect(Object.keys(spec.paths)).not.toContain('/api/v1/auth/verify-email')
+    expect(spec.components.schemas.AuthUser.properties).not.toHaveProperty('emailVerified')
   })
 
   it('omits password reset paths when email is not configured', () => {

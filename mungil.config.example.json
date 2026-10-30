@@ -3,7 +3,6 @@
   "allowedOrigins": [],
   "database": { "file": "/data/mungil.db" },
   "server": { "host": "0.0.0.0", "port": 8787 },
-  "logLevel": "info",
   "auth": {
     "allowSignup": false
   },

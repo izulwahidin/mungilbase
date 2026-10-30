@@ -44,8 +44,6 @@ The account must already exist:
 ```bash
 MUNGIL_USER_PASSWORD='correct horse battery' npx mungilbase user create agent@example.com
 ```
-
-Email verification is honored when `auth.emailVerification.required` is true.
 Admin bypass is also honored, but only when `auth.adminBypassRules` is enabled;
 `--user` alone never becomes a bypass.
 
@@ -107,7 +105,7 @@ Registered only with `--admin` (requires an admin identity):
 | `database_info` | SQLite version, journal mode, page counts and sizes |
 | `list_migrations` | Known migrations and which are applied |
 | `migrate` | Apply code migrations + additive schema sync |
-| `list_users` | Accounts, roles and verification status |
+| `list_users` | Accounts and roles |
 | `create_user` | Create an account, optionally generating a password |
 | `set_user_role` | Change `user` / `admin` |
 | `reset_user_password` | Set a password and revoke all sessions |
@@ -115,7 +113,6 @@ Registered only with `--admin` (requires an admin identity):
 | `list_audit` | Filter the audit log |
 | `backup_database` | Verified online SQLite backup |
 | `files_gc` | Find or delete unreferenced uploads |
-| `generate_sdk` | Write the typed TypeScript client |
 
 Registered only with `--admin --allow-raw-sql`:
 

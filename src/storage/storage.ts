@@ -1,6 +1,5 @@
 import type { StorageConfig } from '../config/schema.js'
 import { LocalStorage } from './local.js'
-import { S3Storage } from './s3.js'
 
 export interface StoredFile {
   data: Buffer
@@ -16,14 +15,6 @@ export interface Storage {
   list(): Promise<string[]>
 }
 
-export function createStorage(
-  config: StorageConfig | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): Storage {
-  if (config?.provider === 's3') {
-    if (!config.s3) throw new Error('storage.s3 is required for the s3 provider')
-    return new S3Storage(config.s3, undefined, env)
-  }
-
+export function createStorage(config: StorageConfig | undefined): Storage {
   return new LocalStorage(config?.local.dir ?? './data/files')
 }

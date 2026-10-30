@@ -18,6 +18,3 @@ mungil.config.json
 .drill/
 backups/
 bench.config.json
-
-# SDK generation check output
-.sdk-check/

@@ -15,9 +15,8 @@ const adminIdentity = {
   id: 'admin1',
   email: 'admin@example.com',
   role: 'admin' as const,
-  emailVerified: true,
 }
-const adminAuth = { uid: 'admin1', role: 'admin' as const, verified: true, admin: false }
+const adminAuth = { uid: 'admin1', role: 'admin' as const, admin: false }
 
 const config: MungilConfig = configSchema.parse({
   tables: [
@@ -68,8 +67,8 @@ async function harness(patch: Partial<CreateMcpServerOptions> = {}): Promise<Har
     config,
     registry,
     db,
-    auth: { uid: 'u1', role: 'user', verified: true, admin: false },
-    identity: { id: 'u1', email: 'a@example.com', role: 'user', emailVerified: true },
+    auth: { uid: 'u1', role: 'user', admin: false },
+    identity: { id: 'u1', email: 'a@example.com', role: 'user' },
     version: 'test',
     ...patch,
   })
@@ -233,8 +232,8 @@ describe('MCP server', () => {
           config,
           registry,
           db,
-          auth: { uid: 'u1', role: 'user', verified: true },
-          identity: { id: 'u1', email: 'a@example.com', role: 'user', emailVerified: true },
+          auth: { uid: 'u1', role: 'user' },
+          identity: { id: 'u1', email: 'a@example.com', role: 'user' },
           allowAdmin: true,
         }),
       ).toThrow(/admin role/)
@@ -261,10 +260,10 @@ describe('MCP server', () => {
         'list_audit',
         'backup_database',
         'files_gc',
-        'generate_sdk',
       ]),
     )
     expect(names).not.toContain('query_sql')
+    expect(names).not.toContain('generate_sdk')
 
     const created = parse(
       await current.client.callTool({

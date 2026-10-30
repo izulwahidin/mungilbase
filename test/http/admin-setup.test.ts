@@ -114,9 +114,9 @@ describe('first-run setup', () => {
     expect(admin).toHaveLength(43)
 
     const row = db
-      .prepare(`SELECT "role", "email_verified" FROM "_mungil_auth_users" WHERE "email" = 'owner@example.com'`)
-      .get() as { role: string; email_verified: number }
-    expect(row).toEqual({ role: 'admin', email_verified: 1 })
+      .prepare(`SELECT "role" FROM "_mungil_auth_users" WHERE "email" = 'owner@example.com'`)
+      .get() as { role: string }
+    expect(row).toEqual({ role: 'admin' })
 
     const audit = db
       .prepare(`SELECT "event" FROM "_mungil_audit" WHERE "event" = 'auth.admin_setup'`)

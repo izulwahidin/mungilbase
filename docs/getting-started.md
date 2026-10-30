@@ -6,7 +6,7 @@ rules in one config file, and it serves a REST API.
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22.18 or newer
 - npm (or another npm-compatible client)
 
 ## 1. Create a project
@@ -76,7 +76,7 @@ curl localhost:8787/version
 ```
 
 While iterating on the config, `npx mungilbase dev` restarts the server and
-regenerates `openapi.json` and the SDK on every change.
+regenerates `openapi.json` on every change.
 
 ## 4. Create an account
 
@@ -127,17 +127,7 @@ curl "localhost:8787/api/v1/notes?sort=-created_at" \
 Rules are enforced inside SQLite. A row your `view` rule hides returns `404`;
 a write your rules reject returns `403 rule_violation`.
 
-## 6. Generate a typed client
-
-```bash
-npx mungilbase sdk ./src/mungil-client.ts
-```
-
-The generated file has no dependencies and compiles on its own. It includes
-typed row shapes, `list/get/create/update/delete`, file upload/download, and
-the auth methods.
-
-## 7. Connect an AI agent (optional)
+## 6. Connect an AI agent (optional)
 
 ```bash
 npx mungilbase mcp --check
@@ -153,7 +143,7 @@ Add `--allow-write` (or `mcp: { allowWrite: true }` in the config) for mutating
 tools. Rule enforcement is identical to the HTTP API. See
 [MCP for AI agents](mcp.md) for Claude Desktop and Cursor configuration.
 
-## 8. Go further
+## 7. Go further
 
 - [CLI reference](cli.md) — every command, option and environment variable.
 - [MCP for AI agents](mcp.md) — tools, client setup and the security model.

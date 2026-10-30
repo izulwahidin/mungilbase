@@ -32,8 +32,7 @@ operate. That is the feature.
 | `src/audit/` | Append-only security events | Never throws; no update/delete path |
 | `src/admin/` | Server-rendered HTML for `/admin` | Every value escaped; one small script for theme, confirms and the field repeater |
 | `src/email/` | SMTP or development log mailer | Provider chosen at boot; log refused in production |
-| `src/storage/` | Local or S3-compatible file storage | Generated keys only; validates the storage root |
-| `src/sdk/` | TypeScript client generation from config | Pure string generation; no runtime dependency |
+| `src/storage/` | Local disk file storage | Generated keys only; validates the storage root |
 | `src/metrics/` | Prometheus counters, histograms, gauges | Process-local; bounded label set |
 | `src/openapi/` | OpenAPI 3.1 generation from config | Pure; no DB, no HTTP |
 
@@ -114,15 +113,6 @@ between `403` and `404`.
   access-token lookup. Promotion takes effect on the next request. Admin bypass
   is a separate config flag (`adminBypassRules`), never an implication of the
   role.
-- **Email verification** stores `email_verified` on the user and single-use
-  hashed tokens in `_mungil_email_verifications`. When `required` is set, login
-  refuses unverified accounts after the password check. Rules can use
-  `auth.verified` without another join.
-- **OAuth** (Google, GitHub) runs as a browser redirect flow. A random state
-  lives in an HttpOnly cookie and is compared on the callback; codes are
-  exchanged server-side; only provider-verified emails can link or create an
-  account. Tokens return in the redirect fragment so they never reach a server
-  access log.
 
 ## Audit
 
@@ -197,17 +187,8 @@ A `file` field stores a string key; the bytes live in `storage.local.dir`.
   object. A crash can still interrupt that sequence; `npm run files:gc` compares
   stored keys with every referenced file value and removes the rest (dry run by
   default).
-- Storage is behind a small interface with two implementations: local disk and
-  S3-compatible (AWS S3, R2, MinIO). Keys are prefixed in the bucket; the
-  original filename travels as object metadata.
-
-## SDK
-
-`npm run sdk` renders one TypeScript file from `MungilConfig`: interfaces with
-the same nullability as the API, table and file methods, auth methods, and a
-typed error class. There is no runtime dependency on MungilBase and no
-hand-maintained drift: CI regenerates it from the example config and typechecks
-the result with `strict`.
+- Storage is local disk behind a small interface. Keys are validated against
+  the storage root; the original filename travels as object metadata.
 
 ## Metrics and load shedding
 

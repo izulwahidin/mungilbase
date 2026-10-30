@@ -11,8 +11,6 @@ export interface AuthContext {
   /** Present when the request carried a valid access token. */
   sessionId?: string | null
   role?: AuthRole | null
-  /** True when the account's email address is verified. */
-  verified?: boolean
   /**
    * True only for an admin when `auth.adminBypassRules` is enabled. A role
    * alone never disables table rules.
@@ -20,4 +18,4 @@ export interface AuthContext {
   admin?: boolean
 }
 
-export const anonymous: AuthContext = { uid: null, role: null, verified: false, admin: false }
+export const anonymous: AuthContext = { uid: null, role: null, admin: false }

@@ -49,15 +49,8 @@ describe('compileRule', () => {
     })
   })
 
-  it('binds auth.verified as a boolean parameter', () => {
-    expect(
-      compileRule('auth.verified == true', { ...context, auth: { uid: 'u1', verified: true } }),
-    ).toEqual({ sql: '(? IS ?)', params: [true, true] })
-
-    expect(compileRule('auth.verified == true', context)).toEqual({
-      sql: '(? IS ?)',
-      params: [false, true],
-    })
+  it('rejects the removed auth.verified field', () => {
+    expect(() => compileRule('auth.verified == true', context)).toThrow(RuleError)
   })
 
   it('renders bare booleans as constants', () => {

@@ -275,7 +275,7 @@ describe('operator account management', () => {
 
     const listed = await service.listUsers()
     expect(listed.total).toBe(1)
-    expect(listed.users[0]).toMatchObject({ email, role: 'user', emailVerified: false })
+    expect(listed.users[0]).toMatchObject({ email, role: 'user' })
     expect(JSON.stringify(listed)).not.toContain('password')
 
     const sessions = db

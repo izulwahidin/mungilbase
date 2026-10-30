@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 export const MCP_CLIENTS = ['opencode', 'claude', 'cursor', 'vscode', 'raw'] as const
 export type McpClient = (typeof MCP_CLIENTS)[number]
@@ -188,9 +188,4 @@ function mergeEntry(
   }
 
   return merged
-}
-
-/** Directory used as `cwd`: the config file's own directory. */
-export function configDirectory(configPath: string): string {
-  return dirname(resolve(configPath))
 }

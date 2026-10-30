@@ -15,7 +15,6 @@ export interface CompileContext {
     /** `null` for anonymous requests. */
     uid: string | null
     /** Defaults to false for callers that only care about identity. */
-    verified?: boolean
   }
 }
 
@@ -111,9 +110,6 @@ function compileNode(node: ExpressionNode, context: CompileContext, depth: numbe
 
     case 'auth': {
       // Bound, not interpolated: auth values are still data.
-      if (node.path === 'verified') {
-        return { sql: '?', params: [context.auth.verified === true]}
-      }
       return { sql: '?', params: [context.auth.uid] }
     }
 

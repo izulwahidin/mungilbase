@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
@@ -16,7 +15,6 @@ import { ensureAuthSchema } from '../auth/schema.js'
 import { backupDatabase } from '../db/backup.js'
 import { createStorage } from '../storage/storage.js'
 import { runFileGc } from '../storage/gc.js'
-import { generateSdk } from '../sdk/generate.js'
 import { AppError, badRequest, notFound } from '../http/errors.js'
 import type { Db } from '../db/connect.js'
 import type { Registry } from '../tables/registry.js'
@@ -25,7 +23,6 @@ export interface AdminIdentity {
   id: string
   email: string
   role: AuthRole
-  emailVerified: boolean
 }
 
 export interface AdminToolsDeps {
@@ -211,25 +208,20 @@ export function registerAdminTools(server: McpServer, deps: AdminToolsDeps): voi
     {
       title: 'Create user',
       description:
-        'Create an account. If password is omitted a random one is generated and returned once. Accounts start email-verified because the operator vouched for them.',
+        'Create an account. If password is omitted a random one is generated and returned once. ',
       inputSchema: {
         email: z.string().email(),
         password: z.string().min(8).max(128).optional(),
         role: z.enum(['user', 'admin']).optional().describe('Default user'),
-        emailVerified: z.boolean().optional().describe('Default true'),
       },
       annotations: MUTATING,
     },
-    async ({ email, password, role, emailVerified }) => {
+    async ({ email, password, role }) => {
       const generated = password ? null : generatePassword()
       const result = await audited(
         'mcp.admin.create_user',
         async () =>
-          service.createUser(
-            { email, password: password ?? generated ?? '' },
-            role ?? 'user',
-            emailVerified ?? true,
-          ),
+          service.createUser({ email, password: password ?? generated ?? '' }, role ?? 'user'),
         { email, role: role ?? 'user', generatedPassword: generated !== null },
       )
       return ok({
@@ -411,32 +403,6 @@ export function registerAdminTools(server: McpServer, deps: AdminToolsDeps): voi
         { apply: apply ?? false },
       )
       return ok({ apply: apply ?? false, ...result })
-    },
-  )
-
-  server.registerTool(
-    'generate_sdk',
-    {
-      title: 'Generate TypeScript SDK',
-      description: 'Write the dependency-free typed client generated from the config.',
-      inputSchema: {
-        output: z.string().optional().describe('Default ./sdk/mungil-client.ts'),
-      },
-      annotations: MUTATING,
-    },
-    async ({ output }) => {
-      const target = resolve(output ?? './sdk/mungil-client.ts')
-      const code = generateSdk(config, { version: deps.version })
-      await audited(
-        'mcp.admin.generate_sdk',
-        async () => {
-          await mkdir(dirname(target), { recursive: true })
-          await writeFile(target, code, 'utf8')
-          return target
-        },
-        { output: target, bytes: Buffer.byteLength(code, 'utf8') },
-      )
-      return ok({ output: target, bytes: Buffer.byteLength(code, 'utf8') })
     },
   )
 

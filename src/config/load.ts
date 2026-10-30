@@ -78,12 +78,6 @@ export async function loadConfigFile(file?: string): Promise<LoadedConfig> {
   try {
     if (extname(absolutePath) === '.json') {
       raw = JSON.parse(readFileSync(absolutePath, 'utf8')) as unknown
-    } else if (isTypeScript(absolutePath)) {
-      const { tsImport } = await import('tsx/esm/api')
-      const module = (await tsImport(pathToFileURL(absolutePath).href, import.meta.url)) as {
-        default?: unknown
-      }
-      raw = unwrapDefault(module)
     } else {
       // Native `import()` caches by URL, which would hide a config file that
       // the admin panel just rewrote. The mtime makes a changed file a new
@@ -140,10 +134,6 @@ function resolveRelativePaths(config: MungilConfig, base: string): MungilConfig 
   }
 }
 
-function isTypeScript(file: string): boolean {
-  const extension = extname(file)
-  return extension === '.ts' || extension === '.mts' || extension === '.cts'
-}
 
 /**
  * Test runners and some bundlers wrap a dynamic import in an extra namespace

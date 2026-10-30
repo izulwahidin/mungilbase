@@ -91,7 +91,6 @@ describe('auth routes', () => {
       id: session.user.id,
       email: 'one@example.com',
       role: 'user',
-      emailVerified: false,
     })
 
     expect((await request('/api/v1/auth/me')).status).toBe(401)

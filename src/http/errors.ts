@@ -4,7 +4,6 @@ export type ErrorCode =
   | 'bad_request'
   | 'unauthorized'
   | 'forbidden'
-  | 'email_not_verified'
   | 'not_found'
   | 'rule_violation'
   | 'conflict'
@@ -37,9 +36,6 @@ export const unauthorized = (message = 'Authentication required'): AppError =>
   new AppError(401, 'unauthorized', message)
 
 export const forbidden = (message = 'Forbidden'): AppError => new AppError(403, 'forbidden', message)
-
-export const emailNotVerified = (message = 'Verify your email before signing in'): AppError =>
-  new AppError(403, 'email_not_verified', message)
 
 /** A rule rejected the operation. Deliberately distinct from `forbidden`. */
 export const ruleViolation = (message = 'Denied by rule', details?: unknown): AppError =>

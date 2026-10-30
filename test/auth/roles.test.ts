@@ -86,7 +86,6 @@ describe('roles', () => {
       id: 'u1',
       email: 'legacy@example.com',
       role: 'user',
-      emailVerified: true,
     })
     legacy.close()
   })

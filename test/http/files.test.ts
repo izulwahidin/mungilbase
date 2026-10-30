@@ -31,7 +31,7 @@ const config = configSchema.parse({
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'mungil-upload-'))
-  config.storage = { provider: 'local', local: { dir } }
+  config.storage = { local: { dir } }
 
   db = openDatabase(':memory:')
   ensureSchema(db, createRegistry(config))

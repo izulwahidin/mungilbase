@@ -116,49 +116,15 @@ describe('config schema', () => {
     ).toBe(false)
   })
 
-  it('validates email verification settings', () => {
-    const base = {
-      appUrl: 'http://localhost:8787',
-      auth: { allowSignup: true, emailVerification: { enabled: true } },
-      email: { provider: 'log', from: 'noreply@example.com' },
-      tables: [],
+  it('rejects config keys that were removed', () => {
+    for (const extra of [
+      { logLevel: 'debug' },
+      { auth: { allowSignup: true, emailVerification: { enabled: true } } },
+      { auth: { allowSignup: true, oauth: { google: { clientId: 'x' } } } },
+      { storage: { provider: 's3' } },
+    ]) {
+      expect(configSchema.safeParse({ tables: [], ...extra }).success).toBe(false)
     }
-
-    expect(configSchema.parse(base).auth?.emailVerification).toEqual({
-      enabled: true,
-      required: false,
-      tokenTtlSeconds: 86_400,
-      maxRequestsPerHour: 3,
-    })
-
-    // Requires an email provider and a link target.
-    expect(
-      configSchema.safeParse({
-        appUrl: 'http://localhost:8787',
-        auth: { allowSignup: true, emailVerification: { enabled: true } },
-        tables: [],
-      }).success,
-    ).toBe(false)
-
-    expect(
-      configSchema.safeParse({
-        auth: { allowSignup: true, emailVerification: { enabled: true } },
-        email: { provider: 'log', from: 'noreply@example.com' },
-        tables: [],
-      }).success,
-    ).toBe(false)
-
-    expect(
-      configSchema.safeParse({
-        ...base,
-        appUrl: undefined,
-        auth: {
-          allowSignup: true,
-          passwordReset: { enabled: false },
-          emailVerification: { enabled: true, verifyUrl: 'https://app.example.com/verify' },
-        },
-      }).success,
-    ).toBe(true)
   })
 
   it('validates file fields and storage settings', () => {
@@ -176,7 +142,7 @@ describe('config schema', () => {
       storage: { local: { dir: '/srv/files' } },
       tables: [],
     })
-    expect(withStorage.storage).toEqual({ provider: 'local', local: { dir: '/srv/files' } })
+    expect(withStorage.storage).toEqual({ local: { dir: '/srv/files' } })
 
     expect(
       configSchema.safeParse({

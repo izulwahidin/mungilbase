@@ -22,7 +22,7 @@ export interface ColumnNode {
 /** Fields of the authenticated principal a rule may reference. */
 export interface AuthNode {
   kind: 'auth'
-  path: 'uid' | 'verified'
+  path: 'uid'
 }
 
 export interface UnaryNode {

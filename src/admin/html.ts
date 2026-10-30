@@ -386,7 +386,6 @@ export function settingsPage(view: SettingsView, csrf: string, user: AdminUser):
     ['Database', value(view.dbFile)],
     ['Static files', config.static ? `<code>${escapeHtml(config.static.dir)}</code> ${yn(config.static.spa, 'SPA', 'plain')}` : value(null)],
     ['Allowed origins', config.allowedOrigins.length ? config.allowedOrigins.map((origin) => `<code>${escapeHtml(origin)}</code>`).join(', ') : value(null)],
-    ['Log level', value(config.logLevel)],
   ])
 
   const authentication = auth
@@ -397,16 +396,12 @@ export function settingsPage(view: SettingsView, csrf: string, user: AdminUser):
         ['Refresh token TTL', value(`${auth.refreshTokenTtlSeconds}s`)],
         ['Admin session TTL', value(`${auth.adminSessionTtlSeconds}s`)],
         ['Minimum password length', value(auth.minPasswordLength)],
-        ['Email verification', yn(auth.emailVerification.enabled, 'required', 'off')],
         ['Password reset', yn(auth.passwordReset.enabled)],
-        ['OAuth providers', auth.oauth ? Object.keys(auth.oauth).join(', ') || 'none' : 'none'],
       ])
     : `<p class="hint">Authentication is disabled: no <code>auth</code> block is set in the config, so there is no admin panel login.</p>`
 
   const storage = kv([
-    ['Provider', value(config.storage?.provider ?? 'local')],
     ['Local directory', value(config.storage?.local.dir)],
-    ['S3 bucket', value(config.storage?.s3?.bucket)],
     ['Tables', value(view.tableCount)],
   ])
 
@@ -462,11 +457,7 @@ export function settingsPage(view: SettingsView, csrf: string, user: AdminUser):
         ])}
         ${editing}
       </div>
-    </div>
-    <p class="hint">Copy of the config file, in JSON, follows.</p>
-    <details class="card"><summary style="cursor:pointer;padding:.8rem 1rem;font-weight:600">Effective JSON</summary>
-      <div class="card-body"><textarea class="code" rows="18" readonly>${escapeHtml(JSON.stringify(config, null, 2))}</textarea></div>
-    </details>`,
+    </div>`,
   })
 }
 

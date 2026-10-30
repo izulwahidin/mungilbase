@@ -7,7 +7,7 @@ install, or as a local dev dependency.
 npx mungilbase <command> [options]
 ```
 
-Requires Node.js 22 or newer.
+Requires Node.js 22.18 or newer.
 
 ## Install
 
@@ -38,9 +38,8 @@ dependency is easier to reproduce.
 | `migrate` | Apply migrations and additively sync the schema. |
 | `mcp` | Serve MCP tools for AI agents over stdio; `--check` and `--print-config` for setup. |
 | `doctor` | Validate the config and every rule, then print a summary. No listener, no database writes. |
-| `gen` | Write `openapi.json` and the typed client. `--check` fails when they are stale. |
+| `gen` | Write `openapi.json` when it is missing or stale. `--check` fails instead of writing. |
 | `openapi [file]` | Write an OpenAPI 3.1 document (default `./openapi.json`). |
-| `sdk [file]` | Generate the typed TypeScript client (default `./sdk/mungil-client.ts`). |
 | `backup [dir\|file]` | Take a verified online backup (default `./backups`). |
 | `files gc` | Find unreferenced uploads. Dry run unless `--apply` is passed. |
 | `user create <email>` | Create an account. |
@@ -49,9 +48,6 @@ dependency is easier to reproduce.
 | `version` | Print the CLI version. |
 | `help` | Print usage. |
 
-Aliases kept for existing scripts: `serve`, `check`, `files-gc`,
-`create-user`, `passwd`, `reset-password`, `set-role`.
-
 ## Global options
 
 | Option | Meaning |
@@ -59,7 +55,7 @@ Aliases kept for existing scripts: `serve`, `check`, `files-gc`,
 | `-c, --config <path>` | Config file. When omitted, see [config discovery](#config-discovery). |
 | `--host <host>` | Listen address for `start`. Overrides `server.host`. |
 | `--port <port>` | Listen port for `start`. Overrides `server.port`. |
-| `-o, --output <path>` | Output path for `openapi` and `sdk`. |
+| `-o, --output <path>` | Output path for `openapi`. |
 | `--role <role>` | Role for `user create` (default `MUNGIL_USER_ROLE` or `user`). |
 | `--password-env <name>` | Read a password from this environment variable instead of `MUNGIL_USER_PASSWORD`. |
 | `--password-stdin` | `user create/passwd`: read the password from stdin. |
@@ -88,7 +84,7 @@ Aliases kept for existing scripts: `serve`, `check`, `files-gc`,
 The CLI loads `./.env` when it exists, before anything reads configuration.
 Real environment variables always win, so a shell export beats the file. Use
 `--env-file <path>` (or `MUNGIL_ENV_FILE`) for another location. Values in a
-`.env` file are available to `user create`, `MCP`, SMTP and S3 settings alike.
+`.env` file are available to `user create`, `MCP` and SMTP settings alike.
 
 ### Passwords
 
@@ -111,9 +107,9 @@ The first match wins:
 2. `MUNGIL_CONFIG`
 3. `mungil.config.ts`, `.mts`, `.js`, `.mjs`, `.cjs`, or `.json` in the current directory
 
-TypeScript configs are loaded in-process through `tsx`; you do not need to
-install or run a separate build step. JSON configs work in containers that
-cannot run a loader. A config is a default export (or the root JSON object) and
+TypeScript configs are loaded with Node's built-in type stripping (Node
+22.18+); you do not need a loader or a separate build step. JSON configs work
+in containers that cannot run TypeScript. A config is a default export (or the root JSON object) and
 is validated at startup — a typo fails the boot, not a request.
 
 ## `start`
@@ -178,8 +174,8 @@ mungilbase dev
 mungilbase dev --port 9000
 ```
 
-Starts the server, writes `openapi.json` and the SDK, then watches the config
-file. A change restarts the server and regenerates both files (250 ms debounce).
+Starts the server, writes `openapi.json`, then watches the config file. A
+change restarts the server and regenerates the document (250 ms debounce).
 `Ctrl+C` stops the server and the watcher. It does not watch `public/`: static
 files are read per request, so a refresh is enough.
 
@@ -210,8 +206,8 @@ same table rules apply); `--allow-write` registers `create_row`, `update_row`
 and `delete_row`; `--tables` narrows the exposed surface.
 
 `--admin` requires an account whose role is `admin` and registers operator
-tools: `migrate`, `list_migrations`, user management, backups, audit reads and
-`generate_sdk`. `--allow-raw-sql` additionally exposes `query_sql` (read-only)
+tools: `migrate`, `list_migrations`, user management, backups and audit
+reads. `--allow-raw-sql` additionally exposes `query_sql` (read-only)
 and `execute_sql` (arbitrary SQL). Both bypass table rules by design and are
 audited.
 
@@ -266,10 +262,10 @@ mungilbase gen
 mungilbase gen --check
 ```
 
-Writes `./openapi.json` and `./sdk/mungil-client.ts` from the current config in
-one step. `--check` writes nothing: it prints the stale paths and exits `1`, so
-CI can fail a pull request that changed the schema without regenerating.
-`dev` runs the write form on every config change.
+Writes `./openapi.json` from the current config. `--check` writes nothing: it
+prints the stale path and exits `1`, so CI can fail a pull request that changed
+the schema without regenerating. `dev` runs the write form on every config
+change.
 
 ## `openapi`
 
@@ -281,17 +277,6 @@ mungilbase openapi ./public/openapi.json
 Writes an OpenAPI 3.1 document generated from the same config that drives
 routing. It cannot describe an endpoint that does not exist. The server also
 serves the live document at `GET /api/v1/openapi.json`.
-
-## `sdk`
-
-```bash
-mungilbase sdk
-mungilbase sdk ./src/lib/mungil.ts
-```
-
-Generates a dependency-free TypeScript client: read/create/update interfaces
-per table, `list/get/create/update/delete`, file upload/download, auth methods,
-and a typed `MungilApiError`. The output compiles on its own.
 
 ## `backup`
 
@@ -353,8 +338,6 @@ admin` stays the headless and recovery path.
 | `MUNGIL_USER_PASSWORD` | `user create` / `user passwd` |
 | `MUNGIL_USER_ROLE` | Default role for `user create` |
 | `MUNGIL_SMTP_PASSWORD` | SMTP password |
-| `MUNGIL_S3_ACCESS_KEY_ID` / `MUNGIL_S3_SECRET_ACCESS_KEY` | S3-compatible storage |
-| `MUNGIL_GOOGLE_CLIENT_SECRET` / `MUNGIL_GITHUB_CLIENT_SECRET` | OAuth |
 
 See [`.env.example`](../.env.example) for the full list.
 
@@ -368,30 +351,22 @@ See [`.env.example`](../.env.example) for the full list.
 
 ## Using it as a library
 
-The package also exports the config schema, config loader, server boot
-function, OpenAPI builder and SDK generator:
+The root export is the config schema and loader, server boot, OpenAPI builder
+and CLI helpers. The MCP server is a subpath so the root import stays lean:
 
 ```ts
-import {
-  loadConfig,
-  startServer,
-  generateSdk,
-  buildOpenApi,
-  openMcpContext,
-} from 'mungilbase'
+import { loadConfig, startServer, buildOpenApi } from 'mungilbase'
 import type { MungilConfigInput } from 'mungilbase/config'
+import { createMcpServer } from 'mungilbase/mcp'
 
 const config = await loadConfig('./mungil.config.ts')
-const sdk = generateSdk(config)
-const spec = buildOpenApi(config, '0.6.0')
+const spec = buildOpenApi(config, '0.8.0')
 
 const server = await startServer({ configPath: './mungil.config.ts', handleSignals: false })
 await server.close()
 
-// Build the MCP server without the stdio transport.
-const mcp = await openMcpContext({ configPath: './mungil.config.ts', allowWrite: false })
-await mcp.server.close()
-mcp.db.close()
+// The MCP entry point is also available through its subpath.
+const mcp = createMcpServer({ config, registry, db, auth, version: '0.8.0' })
 ```
 
 Importing the package never opens a database or starts a listener.
