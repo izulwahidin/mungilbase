@@ -85,7 +85,7 @@ write_config "$CONFIG" "$DB"
 write_config "$RESTORED_CONFIG" "$RESTORED"
 
 echo "1/5  creating schema and seed rows"
-npx --no-install tsx src/cli/migrate.ts "$CONFIG" > /dev/null
+npx --no-install tsx src/cli/main.ts migrate --config "$CONFIG" > /dev/null
 "$NODE_BIN" -e '
 const Database = require("better-sqlite3");
 const db = new Database(process.argv[1]);
@@ -99,7 +99,7 @@ db.close();
 ' "$DB"
 
 echo "2/5  taking an online backup while the source stays open"
-npx --no-install tsx src/cli/backup.ts "./.drill/backups" "$CONFIG" > "$DRILL_DIR/backup.json"
+npx --no-install tsx src/cli/main.ts backup "./.drill/backups" --config "$CONFIG" > "$DRILL_DIR/backup.json"
 cat "$DRILL_DIR/backup.json"
 SNAPSHOT="./.drill/backups/$(ls "$DRILL_DIR"/backups/*.db | head -n 1 | xargs -n 1 basename)"
 
@@ -132,7 +132,7 @@ console.log(`     source writable: ${rows} rows`);
 
 echo "5/5  restoring the snapshot and re-checking the schema"
 cp "$SNAPSHOT" "$RESTORED"
-npx --no-install tsx src/cli/migrate.ts "$RESTORED_CONFIG" > /dev/null
+npx --no-install tsx src/cli/main.ts migrate --config "$RESTORED_CONFIG" > /dev/null
 "$NODE_BIN" -e '
 const Database = require("better-sqlite3");
 const db = new Database(process.argv[1], { readonly: true });

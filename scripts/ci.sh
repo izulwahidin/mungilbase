@@ -24,7 +24,7 @@ bash scripts/restore-drill.sh
 echo "==> generated SDK compiles"
 rm -rf .sdk-check
 mkdir -p .sdk-check
-npx --no-install tsx src/cli/sdk.ts ./mungil.config.ts ./.sdk-check/client.ts > /dev/null
+npx --no-install tsx src/cli/main.ts sdk ./.sdk-check/client.ts --config ./mungil.config.ts > /dev/null
 npx --no-install tsc --noEmit --strict --target ES2022 --module ESNext \
   --moduleResolution Bundler --lib ES2022,DOM ./.sdk-check/client.ts
 rm -rf .sdk-check
