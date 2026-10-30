@@ -38,7 +38,10 @@ test, or marked as planned.
    silently opens a table is a vulnerability, not a config error.
 4. **Process → filesystem.** Only the operator writes the config and database
    path; the app writes only the database and uploads.
-5. **Operator → secrets.** Secrets arrive from environment variables, never
+5. **MCP client → application.** Tool arguments are untrusted and come from an
+   AI agent. The identity is chosen by the operator at process start; the agent
+   cannot select or escalate it.
+6. **Operator → secrets.** Secrets arrive from environment variables, never
    from the config file.
 
 ## Threats and status
@@ -121,6 +124,7 @@ launch; **out** = deliberately not handled.
 | Implicit admin bypass | done | `auth.adminBypassRules` defaults to false; promotion alone never disables rules |
 | Admin actions unaudited | done | `auth.admin_login`, `auth.admin_logout`, `admin.create`, `admin.update`, `admin.delete` are written to `_mungil_audit` |
 | Admin panel cookie theft | partial | HttpOnly + `SameSite=Lax`, `Secure` when `appUrl` is HTTPS, 8-hour lifetime, revocable; no device binding |
+| MCP agent exceeds operator intent | done | Mutating tools are only registered with `--allow-write`; `--tables` narrows the surface; identity comes from an existing account, never from tool arguments; rules run in SQLite and writes are audited |
 | Extension/config escape hatch | out | There is no plugin system in v0.1, by design |
 
 ## Out of scope for v0.1
@@ -128,6 +132,7 @@ launch; **out** = deliberately not handled.
 - Multi-tenant isolation within one deployment
 - Horizontal scaling and read replicas
 - Protection against a compromised host or operator
+- Remote/HTTP MCP transports (only the local stdio transport is exposed)
 - File-upload malware scanning
 - DDoS at the edge (deploy behind a proxy/CDN if needed)
 - SOC 2 / ISO 27001 certification

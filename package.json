@@ -1,16 +1,74 @@
 {
   "name": "mungilbase",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "A small, self-hosted backend defined by a typed config file: REST, auth, row-level rules, migrations.",
   "type": "module",
-  "private": true,
+  "license": "Apache-2.0",
+  "author": "MungilBase contributors",
+  "homepage": "https://github.com/izulwahidin/mungilbase#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izulwahidin/mungilbase.git"
+  },
+  "bugs": {
+    "url": "https://github.com/izulwahidin/mungilbase/issues"
+  },
+  "keywords": [
+    "backend",
+    "baas",
+    "sqlite",
+    "rest",
+    "hono",
+    "self-hosted",
+    "row-level-security",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22"
+  },
+  "bin": {
+    "mungilbase": "./dist/cli/main.js"
+  },
+  "main": "./dist/lib.js",
+  "types": "./dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
+    },
+    "./config": {
+      "types": "./dist/config/schema.d.ts",
+      "import": "./dist/config/schema.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
+    ".env.example",
+    "mungil.config.example.json"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
+    "cli": "tsx src/cli/main.ts",
+    "init": "tsx src/cli/main.ts init",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -24,24 +82,27 @@
     "ci": "bash scripts/ci.sh",
     "user:role": "tsx src/cli/set-role.ts",
     "files:gc": "tsx src/cli/files-gc.ts",
-    "sdk": "tsx src/cli/sdk.ts"
+    "sdk": "tsx src/cli/sdk.ts",
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1159.0",
     "@hono/node-server": "^1.13.8",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@node-rs/argon2": "^2.2.2",
     "better-sqlite3": "^11.8.1",
     "hono": "^4.6.16",
     "jsep": "^1.4.0",
     "nodemailer": "^10.3.1",
-    "zod": "^3.24.1"
+    "tsx": "^4.19.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.5",
     "@types/nodemailer": "^8.0.2",
     "fast-check": "^3.23.2",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }

@@ -13,6 +13,11 @@ cd "$ROOT"
 echo "==> typecheck + tests + build"
 npm run check
 
+echo "==> CLI and package smoke test"
+node dist/cli/main.js --version
+node dist/cli/main.js --help > /dev/null
+npm pack --dry-run > /dev/null
+
 echo "==> backup + restore drill"
 bash scripts/restore-drill.sh
 

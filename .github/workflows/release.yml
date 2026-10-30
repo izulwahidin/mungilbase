@@ -38,3 +38,29 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  npm:
+    name: publish to npm
+    runs-on: ubuntu-latest
+    # Publishing is skipped when the secret is not configured, so forks and
+    # dry-run tags do not fail. Add NPM_TOKEN in repository settings to enable.
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    if: ${{ env.NPM_TOKEN != '' }}
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

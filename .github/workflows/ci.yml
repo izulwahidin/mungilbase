@@ -27,6 +27,12 @@ jobs:
       # build, then the backup + restore drill.
       - run: npm run ci
 
+      - name: CLI and package smoke test
+        run: |
+          node dist/cli/main.js --version
+          node dist/cli/main.js --help > /dev/null
+          npm pack --dry-run
+
       - name: Dependency audit
         run: npm audit --audit-level=high
         continue-on-error: true

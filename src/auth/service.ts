@@ -628,6 +628,22 @@ export class AuthService {
     return this.createSession(user)
   }
 
+  /**
+   * Look up an account by email without checking a password. Used by
+   * operator-controlled surfaces (the MCP server) that already run inside the
+   * trust boundary; never expose this over HTTP.
+   */
+  async findUserByEmail(email: string): Promise<AuthUser | null> {
+    const normalized = normalizeEmail(email)
+    const user = this.db
+      .prepare(
+        `SELECT "id", "email", "password_hash", "role", "email_verified"
+         FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
+      )
+      .get(normalized) as UserRow | undefined
+    return user ? toAuthUser(user) : null
+  }
+
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {
     const email = normalizeEmail(input.email)
     const accountKey = `acct:${email}`

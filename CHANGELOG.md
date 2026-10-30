@@ -4,6 +4,51 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-30
+
+### Added
+
+- MCP server for AI agents: `npx mungilbase mcp` speaks the Model Context
+  Protocol over stdio. Read tools (`whoami`, `list_tables`, `describe_table`,
+  `list_rows`, `get_row`, `get_openapi`) and schema/OpenAPI resources are
+  always available; `--allow-write` adds `create_row`, `update_row` and
+  `delete_row`.
+- MCP reuses the HTTP CRUD functions, so table rules, validation, timestamps
+  and constraints apply identically. Read-only and anonymous by
+  default; `--user <email>` selects the account used for rule evaluation and
+  `--tables` narrows the exposed surface.
+- `mungilbase/mcp` export and `openMcpContext`/`createMcpServer` for embedding
+  the MCP server in another process.
+- `AuthService.findUserByEmail` for operator-controlled identity resolution.
+- Docs: `docs/mcp.md` with Claude Desktop, Cursor and generic client setup.
+
+### Changed
+
+- Bumped `zod` to 3.25 for compatibility with the MCP SDK.
+
+## [0.4.0] — 2026-10-30
+
+### Added
+
+- `npx mungilbase` CLI: `init`, `start`, `migrate`, `doctor`, `openapi`, `sdk`,
+  `backup`, `files gc`, and `user create|passwd|role`.
+- `init` scaffolds a runnable project (`mungil.config.ts`, `.env.example`,
+  `.gitignore`), with `--json` for configs that cannot run a TS loader.
+- TypeScript configs are loaded in-process through `tsx`, so the published
+  package needs no separate build or loader setup.
+- Config discovery across `mungil.config.{ts,mts,js,mjs,cjs,json}`, with
+  `MUNGIL_CONFIG` and `--config` taking precedence.
+- Typed library entrypoint (`mungilbase` and `mungilbase/config`) exporting the
+  config schema, loader, server boot, OpenAPI builder and SDK generator.
+- npm publish job on `v*` tags, plus package/CLI smoke checks in CI.
+
+### Changed
+
+- The server boot path is shared by the CLI, the Docker entrypoint and library
+  users (`src/server.ts`), instead of living in `src/index.ts`.
+- `package.json` is publishable: `bin`, `exports`, `files`, and `tsx` moved to
+  runtime dependencies.
+
 ## [0.3.0] — 2026-10-30
 
 ### Added

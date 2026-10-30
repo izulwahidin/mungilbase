@@ -6,7 +6,7 @@ A small, self-hosted backend defined by one typed config file: REST endpoints,
 authentication, row-level rules, and migrations. Runs as a single Node process
 with SQLite.
 
-> **Status: v0.3.0 (pre-1.0).** Feature-complete for a single-node self-hosted
+> **Status: v0.5.0 (pre-1.0).** Feature-complete for a single-node self-hosted
 > deployment, but it has not been through an external security audit or a
 > production load test. Read [What works today](#what-works-today) and the
 > [production gate](#production-gate) before relying on it.
@@ -26,7 +26,40 @@ transactional gaps. MungilBase is deliberately the boring option:
 - **Deny by default.** Every table must declare all five rules; `null` is
   deny, `'true'` is allow, and there is no implicit "open" state.
 
-## Quick start
+## Install
+
+Requires Node.js 22 or newer.
+
+```bash
+npx mungilbase init      # mungil.config.ts, .env.example, .gitignore
+npx mungilbase migrate   # apply migrations + additively sync the schema
+npx mungilbase start
+curl localhost:8787/health
+```
+
+`init` creates a starter config with a `notes` table and signup enabled, so you
+can try the API immediately. Edit the config, then run `migrate` again.
+
+The repository's example config (`mungil.config.ts`) describes `posts`; the
+one from `init` describes `notes`. Either is validated at boot, so a typo is a
+startup error, not a runtime surprise.
+
+Everything the CLI can do:
+
+```bash
+npx mungilbase --help
+npx mungilbase doctor                 # validate config + every rule
+npx mungilbase openapi ./openapi.json
+npx mungilbase sdk ./sdk/client.ts
+npx mungilbase backup ./backups
+npx mungilbase files gc               # dry run; --apply deletes
+npx mungilbase mcp                    # MCP tools for AI agents (stdio)
+```
+
+See [docs/cli.md](docs/cli.md) for the full command reference and
+[docs/getting-started.md](docs/getting-started.md) for a guided first project.
+
+### From source
 
 ```bash
 npm install
@@ -34,9 +67,6 @@ npm run dev
 curl localhost:8787/health
 curl localhost:8787/version
 ```
-
-The example config (`mungil.config.ts`) describes `posts`. It is validated at
-boot; a typo is a startup error, not a runtime surprise.
 
 Apply migrations and sync the schema:
 
@@ -80,10 +110,10 @@ TOKEN=$(curl -s localhost:8787/api/v1/auth/login \
 
 USER_ID=$(curl -s localhost:8787/api/v1/auth/me -H "Authorization: Bearer $TOKEN" | jq -r .id)
 
-curl -X POST localhost:8787/api/v1/posts \
+curl -X POST localhost:8787/api/v1/notes \
   -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
-  -d "{\"author_id\":\"$USER_ID\",\"title\":\"Hello\"}"
+  -d "{\"owner_id\":\"$USER_ID\",\"title\":\"Hello\"}"
 ```
 
 ### Endpoints
@@ -179,8 +209,9 @@ Objects can still be orphaned by a crash between the row write and the delete.
 Collect them with:
 
 ```bash
-npm run files:gc              # dry run
-npm run files:gc -- --apply   # delete unreferenced objects
+npx mungilbase files gc              # dry run
+npx mungilbase files gc --apply      # delete unreferenced objects
+npm run files:gc -- --apply          # from a source checkout
 ```
 
 Auth users live in internal `_mungil_*` tables. They are not config tables, so
@@ -196,7 +227,7 @@ session for the account.
 Email verification is off by default. Set `auth.emailVerification.enabled` to
 send a link on registration, and `required: true` to reject logins until the
 address is verified. Resending needs a session and is throttled. Accounts
-created with `user:create` start verified, since the operator vouched for them.
+created with `mungilbase user create` start verified, since the operator vouched for them.
 
 Users have a closed role: `user` or `admin`. Promotion alone does **not**
 bypass table rules; set `auth.adminBypassRules: true` if admins should see and
@@ -204,7 +235,7 @@ write everything. Roles are read from the database on every request, so a
 change applies to already-issued tokens immediately.
 
 ```bash
-npm run user:role -- me@example.com admin
+npx mungilbase user role me@example.com admin
 ```
 
 ### Admin panel
@@ -227,8 +258,9 @@ that does not exist.
 ### TypeScript SDK
 
 ```bash
-npm run sdk                                        # -> ./sdk/mungil-client.ts
-npm run sdk -- ./mungil.config.ts ./sdk/client.ts
+npx mungilbase sdk                     # -> ./sdk/mungil-client.ts
+npx mungilbase sdk ./sdk/client.ts     # explicit output
+npm run sdk                            # from a source checkout
 ```
 
 Generates a dependency-free typed client from the config: read/create/update
@@ -237,11 +269,31 @@ download helpers, auth methods (`login`, `register`, `refresh`, `logout`, `me`),
 and a typed `MungilApiError`. The generated file compiles on its own; CI
 typechecks it on every run.
 
+### MCP for AI agents
+
+`npx mungilbase mcp` starts a Model Context Protocol server over stdio. It
+exposes `list_tables`, `describe_table`, `list_rows`, `get_row`, `whoami`,
+`get_openapi`, plus schema/OpenAPI resources, using the same CRUD functions and
+row-level rules as the HTTP API. It is anonymous and read-only by default.
+
+```bash
+# read-only, as one account, limited to two tables
+npx mungilbase mcp --user agent@example.com --tables notes,posts
+
+# add create_row / update_row / delete_row
+npx mungilbase mcp --user agent@example.com --allow-write
+```
+
+File uploads, raw SQL, config changes and user management are not exposed.
+See [docs/mcp.md](docs/mcp.md) for Claude Desktop, Cursor and generic client
+configuration, the security model, and programmatic use.
+
 ### Audit log
 
 Security-relevant outcomes are appended to `_mungil_audit`: rule denials
-(`rule_violation`), throttling (`rate_limited`), `401`s, server errors, and
-`auth.register` / `auth.login` / `auth.refresh` / `auth.logout` successes. Each
+(`rule_violation`), throttling (`rate_limited`), `401`s, server errors,
+`auth.register` / `auth.login` / `auth.refresh` / `auth.logout` successes, and
+`mcp.create` / `mcp.update` / `mcp.delete` writes (including denials). Each
 row carries the request id, user id, table, operation, resource id and code.
 
 ```sql
@@ -366,7 +418,11 @@ anonymous requests rather than an empty result.
 - [x] Append-only audit log for denials, throttling, 401s, 5xx, auth and admin events
 - [x] Prometheus `/metrics`, load shedding, optional Sentry-compatible reporting
 - [x] Verified online backups + automated restore drill (runs in CI)
-- [x] Docker image, compose file, CI workflow, threat model, runbook
+- [x] `npx mungilbase` CLI (`init`, `start`, `migrate`, `doctor`, `openapi`,
+      `sdk`, `backup`, `files gc`, `mcp`, user management) and a typed library export
+- [x] MCP server for AI agents (stdio), rules-enforced, read-only by default,
+      with optional identity, table allowlist and write tools
+- [x] Docker image, compose file, CI workflow, npm release, threat model, runbook
 
 ## Not built yet
 
@@ -376,7 +432,7 @@ anonymous requests rather than an empty result.
 
 ## Production gate
 
-Every code-level requirement is met as of **v0.3.0**:
+Every code-level requirement is met as of **v0.5.0**:
 
 - [x] Argon2id password hashing (versioned PHC strings)
 - [x] DB-backed sessions, refresh rotation with reuse detection, revocable
@@ -400,7 +456,9 @@ These are operational or third-party tasks, not code:
 - [ ] An on-call/support commitment for the deployment.
 - [ ] SMTP deliverability verified with the real provider (bounces, complaints).
 
-See [docs/threat-model.md](docs/threat-model.md),
+See [docs/getting-started.md](docs/getting-started.md),
+[docs/cli.md](docs/cli.md), [docs/mcp.md](docs/mcp.md),
+[docs/threat-model.md](docs/threat-model.md),
 [docs/architecture.md](docs/architecture.md) and
 [docs/runbook.md](docs/runbook.md) (backups, restore, upgrades, incidents).
 
@@ -411,13 +469,16 @@ cp mungil.config.example.json mungil.config.json
 docker compose up -d --build
 ```
 
-Pushing a `v*` tag builds and publishes `ghcr.io/<owner>/mungilbase:<tag>`
-via `.github/workflows/release.yml`.
+Pushing a `v*` tag publishes `ghcr.io/<owner>/mungilbase:<tag>` via
+`.github/workflows/release.yml` and, when `NPM_TOKEN` is set, publishes the
+package to npm. A bare-metal host can run the same build with
+`npx mungilbase start`; keep the process under systemd or another process
+manager.
 
-SQLite lives in `./data` on the host. Schedule `npm run backup -- /backups`
+SQLite lives in `./data` on the host. Schedule `npx mungilbase backup /backups`
 and read [docs/runbook.md](docs/runbook.md); for continuous replication use the
 Litestream block in `docker-compose.yml`. Before trusting any backup, run
-`npm run drill`.
+`npm run drill` from a source checkout.
 
 ## License
 
