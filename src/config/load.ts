@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { extname, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { configSchema, type MungilConfig } from './schema.js'
 
@@ -89,7 +89,27 @@ export async function loadConfig(file?: string): Promise<MungilConfig> {
     throw new ConfigError(`Invalid config in ${absolutePath}:\n${issues}`)
   }
 
-  return parsed.data
+  return resolveRelativePaths(parsed.data, dirname(absolutePath))
+}
+
+/**
+ * Relative paths in the config (`database.file`, `storage.local.dir`,
+ * `static.dir`) are resolved against the config file, not the process working
+ * directory. A client that launches `mungilbase mcp` from another directory
+ * then still opens the same database instead of silently creating a new one.
+ */
+function resolveRelativePaths(config: MungilConfig, base: string): MungilConfig {
+  const resolveOne = (value: string): string =>
+    value === ':memory:' || isAbsolute(value) ? value : resolve(base, value)
+
+  return {
+    ...config,
+    database: { ...config.database, file: resolveOne(config.database.file) },
+    ...(config.storage?.local
+      ? { storage: { ...config.storage, local: { ...config.storage.local, dir: resolveOne(config.storage.local.dir) } } }
+      : {}),
+    ...(config.static ? { static: { ...config.static, dir: resolveOne(config.static.dir) } } : {}),
+  }
 }
 
 function isTypeScript(file: string): boolean {

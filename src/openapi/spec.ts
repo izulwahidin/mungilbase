@@ -65,8 +65,12 @@ function readSchema(table: TableConfig): Schema {
   const required: string[] = ['id']
 
   for (const field of table.fields) {
-    properties[field.name] = field.required ? fieldSchema(field) : nullable(fieldSchema(field))
-    if (field.required) required.push(field.name)
+    // Matches the DDL: a non-null default means the column is never null and is
+    // always present on reads.
+    const alwaysPresent =
+      field.required || (field.default !== undefined && field.default !== null)
+    properties[field.name] = alwaysPresent ? fieldSchema(field) : nullable(fieldSchema(field))
+    if (alwaysPresent) required.push(field.name)
   }
 
   if (table.timestamps) {

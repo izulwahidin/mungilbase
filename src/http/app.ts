@@ -26,6 +26,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerCrudRoutes } from './routes/crud.js'
 import { registerFileRoutes } from './routes/files.js'
 import { registerOAuthRoutes } from './routes/oauth.js'
+import { registerStaticRoutes } from './static.js'
 
 export interface AppEnv {
   Variables: {
@@ -214,6 +215,16 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   })
 
   app.get('/version', (c) => c.json({ version: deps.version }))
+
+  // Registered last: the API, the admin panel and the health endpoints always
+  // win over files with the same path.
+  if (deps.config.static) {
+    registerStaticRoutes(app, {
+      dir: deps.config.static.dir,
+      spa: deps.config.static.spa,
+      cacheControl: deps.config.static.cacheControl,
+    })
+  }
 
   app.notFound((c) =>
     c.json({ error: { code: 'not_found', message: 'Not found', request_id: c.get('requestId') } }, 404),

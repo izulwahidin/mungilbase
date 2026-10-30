@@ -1,4 +1,8 @@
+import { randomBytes } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { ConfigError } from '../config/load.js'
+import { findConfigPath, loadConfig } from '../config/load.js'
 import { MigrationError } from '../db/migrator.js'
 import { SchemaError } from '../tables/registry.js'
 import { AppError } from '../http/errors.js'
@@ -9,14 +13,23 @@ import {
   createUser,
   doctor,
   filesGc,
+  gen,
   migrate,
   openapi,
   resetPassword,
   sdk,
   setRole,
 } from './commands.js'
+import { dev } from './dev.js'
 import { init } from './init.js'
-import { runMcpServer } from '../mcp/start.js'
+import { checkMcp } from '../mcp/check.js'
+import { runMcpServer, applyMcpDefaults } from '../mcp/start.js'
+import {
+  MCP_CLIENTS,
+  buildClientConfig,
+  mergeClientConfig,
+  type McpClient,
+} from '../mcp/client-config.js'
 
 export class UsageError extends Error {
   override readonly name = 'UsageError'
@@ -37,12 +50,19 @@ interface ParsedArgs {
   passwordEnv?: string
   user?: string
   tables?: string[]
+  demoEmail?: string
+  printConfig?: McpClient
   force: boolean
   json: boolean
   apply: boolean
   allowWrite: boolean
   admin: boolean
   allowRawSql: boolean
+  demo: boolean
+  check: boolean
+  write: boolean
+  passwordStdin: boolean
+  generatePassword: boolean
   help: boolean
   version: boolean
 }
@@ -50,11 +70,13 @@ interface ParsedArgs {
 const COMMANDS = new Set([
   'start',
   'serve',
+  'dev',
   'init',
   'migrate',
   'mcp',
   'doctor',
   'check',
+  'gen',
   'openapi',
   'sdk',
   'backup',
@@ -160,7 +182,13 @@ async function dispatch(
   io: CliIo,
 ): Promise<void> {
   const options = { configPath: parsed.config, version: VERSION }
-  const password = readPassword(parsed.passwordEnv)
+
+  if (parsed.printConfig && command !== 'mcp') {
+    throw new UsageError('--print-config only applies to the mcp command')
+  }
+  if (parsed.check && command !== 'mcp' && command !== 'gen') {
+    throw new UsageError('--check only applies to the mcp and gen commands')
+  }
 
   switch (command) {
     case 'start':
@@ -174,27 +202,69 @@ async function dispatch(
       })
       return
     }
+    case 'dev':
+      await dev({ configPath: parsed.config, host: parsed.host, port: parsed.port })
+      return
     case 'init': {
       const result = await init({
         directory: args[0],
         force: parsed.force,
         json: parsed.json,
+        demo: parsed.demo,
+        demoEmail: parsed.demoEmail,
       })
       for (const path of result.created) io.log(`Created ${path}`)
       for (const path of result.skipped) io.log(`Kept    ${path} (already exists)`)
       io.log('')
+      if (result.demo) {
+        io.log('Demo data is ready:')
+        io.log(`  Database  ${result.demo.database}`)
+        io.log(`  Account   ${result.demo.email}`)
+        io.log(`  Password  ${result.demo.password}`)
+        io.log(`  Todos     ${result.demo.todos} rows (private to that account)`)
+        io.log('')
+        io.log('The password is shown once. Store it now, or run:')
+        io.log(`  mungilbase user passwd ${result.demo.email} --generate-password`)
+        io.log('')
+      }
       io.log('Next:')
-      io.log('  mungilbase migrate')
-      if (result.created.some((path) => path.endsWith('config.ts') || path.endsWith('config.json'))) {
+      if (!result.demo) {
+        io.log('  mungilbase migrate')
         io.log('  MUNGIL_USER_PASSWORD=... mungilbase user create you@example.com')
       }
       io.log('  mungilbase start')
+      io.log('')
+      io.log('Frontend  http://localhost:8787')
+      io.log('API       http://localhost:8787/api/v1')
+      io.log('Admin     http://localhost:8787/admin')
+      io.log('MCP       mungilbase mcp --check')
+      io.log('          mungilbase mcp --print-config opencode')
       return
     }
     case 'migrate':
       await migrate(options)
       return
     case 'mcp':
+      if (parsed.printConfig) {
+        await printClientConfig(parsed, parsed.printConfig, io)
+        return
+      }
+      if (parsed.check) {
+        const result = await checkMcp(
+          {
+            configPath: parsed.config,
+            user: parsed.user,
+            allowWrite: parsed.allowWrite,
+            admin: parsed.admin,
+            allowRawSql: parsed.allowRawSql,
+            tables: parsed.tables,
+            version: VERSION,
+          },
+          parsed.json ? () => undefined : io.log,
+        )
+        if (parsed.json) io.log(JSON.stringify(result, null, 2))
+        return
+      }
       await runMcpServer({
         configPath: parsed.config,
         user: parsed.user,
@@ -207,8 +277,18 @@ async function dispatch(
       return
     case 'doctor':
     case 'check':
-      await doctor(options)
+      await doctor({ ...options, json: parsed.json })
       return
+    case 'gen': {
+      const result = await gen({ ...options, check: parsed.check })
+      if (!parsed.check) return
+      if (result.stale.length === 0) {
+        io.log('Generated files are up to date.')
+        return
+      }
+      for (const artifact of result.stale) io.error(`stale: ${artifact.path}`)
+      throw new Error(`Generated files are stale. Run \`mungilbase gen\` to update them.`)
+    }
     case 'openapi':
       await openapi({ ...options, output: args[0] ?? parsed.output })
       return
@@ -225,16 +305,16 @@ async function dispatch(
       return
     }
     case 'user':
-      return dispatchUser(args, parsed, options, password)
+      return dispatchUser(args, parsed, options, io)
     case 'create-user': {
       const email = requireArg(args[0], 'user create needs an email address')
-      await createUser(email, { ...options, password, role: parsed.role })
+      await createAccount(email, parsed, options, io)
       return
     }
     case 'passwd':
     case 'reset-password': {
       const email = requireArg(args[0], 'user passwd needs an email address')
-      await resetPassword(email, { ...options, password })
+      await changePassword(email, parsed, options, io)
       return
     }
     case 'set-role': {
@@ -252,20 +332,20 @@ async function dispatchUser(
   args: string[],
   parsed: ParsedArgs,
   options: { configPath?: string; version: string },
-  password: string | undefined,
+  io: CliIo,
 ): Promise<void> {
   const [subcommand, ...rest] = args
   switch (subcommand) {
     case 'create': {
       const email = requireArg(rest[0], 'user create needs an email address')
-      await createUser(email, { ...options, password, role: parsed.role })
+      await createAccount(email, parsed, options, io)
       return
     }
     case 'passwd':
     case 'password':
     case 'reset': {
       const email = requireArg(rest[0], 'user passwd needs an email address')
-      await resetPassword(email, { ...options, password })
+      await changePassword(email, parsed, options, io)
       return
     }
     case 'role': {
@@ -283,13 +363,116 @@ async function dispatchUser(
   }
 }
 
-function readPassword(passwordEnv?: string): string | undefined {
-  if (passwordEnv) {
-    const value = process.env[passwordEnv]
-    if (!value) throw new UsageError(`environment variable ${passwordEnv} is not set`)
-    return value
+async function createAccount(
+  email: string,
+  parsed: ParsedArgs,
+  options: { configPath?: string; version: string },
+  io: CliIo,
+): Promise<void> {
+  const password = await resolvePassword(parsed)
+  const user = await createUser(email, { ...options, password: password.value, role: parsed.role })
+  reportPassword(password, io, user.email)
+}
+
+async function changePassword(
+  email: string,
+  parsed: ParsedArgs,
+  options: { configPath?: string; version: string },
+  io: CliIo,
+): Promise<void> {
+  const password = await resolvePassword(parsed)
+  const user = await resetPassword(email, { ...options, password: password.value })
+  reportPassword(password, io, user.email)
+}
+
+interface ResolvedPassword {
+  value?: string
+  generated: boolean
+}
+
+async function resolvePassword(parsed: ParsedArgs): Promise<ResolvedPassword> {
+  if (parsed.generatePassword) {
+    return { value: randomBytes(18).toString('base64url'), generated: true }
   }
-  return process.env.MUNGIL_USER_PASSWORD
+
+  if (parsed.passwordStdin) {
+    if (process.stdin.isTTY) {
+      throw new UsageError(
+        '--password-stdin expects the password on stdin, e.g. `printf %s "$PW" | mungilbase user create me@example.com --password-stdin`',
+      )
+    }
+    const chunks: Buffer[] = []
+    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
+    const value = Buffer.concat(chunks).toString('utf8').replace(/\r?\n$/, '')
+    if (!value) throw new UsageError('--password-stdin received an empty password')
+    return { value, generated: false }
+  }
+
+  if (parsed.passwordEnv) {
+    const value = process.env[parsed.passwordEnv]
+    if (!value) throw new UsageError(`environment variable ${parsed.passwordEnv} is not set`)
+    return { value, generated: false }
+  }
+
+  return { value: process.env.MUNGIL_USER_PASSWORD, generated: false }
+}
+
+function reportPassword(password: ResolvedPassword, io: CliIo, email: string): void {
+  if (!password.generated || !password.value) return
+  io.log('')
+  io.log(`Password  ${password.value}`)
+  io.log(`Account   ${email}`)
+  io.log('Shown once. Store it now; it is not written anywhere.')
+}
+
+/** Emits a client configuration that launches the server without npx. */
+async function printClientConfig(
+  parsed: ParsedArgs,
+  client: McpClient,
+  io: CliIo,
+): Promise<void> {
+  const configPath = findConfigPath(parsed.config)
+  const config = await loadConfig(configPath)
+  const effective = applyMcpDefaults(
+    {
+      user: parsed.user,
+      tables: parsed.tables,
+      allowWrite: parsed.allowWrite,
+      admin: parsed.admin,
+      allowRawSql: parsed.allowRawSql,
+    },
+    config,
+  )
+
+  const cliPath = process.argv[1]
+  if (!cliPath) throw new UsageError('cannot determine the mungilbase CLI path')
+
+  const rendering = buildClientConfig({
+    client,
+    cliPath,
+    configPath,
+    cwd: dirname(configPath),
+    user: effective.user,
+    tables: effective.tables,
+    allowWrite: effective.allowWrite,
+    admin: effective.admin,
+    allowRawSql: effective.allowRawSql,
+  })
+
+  if (!parsed.write) {
+    io.log(JSON.stringify(rendering.document, null, 2))
+    return
+  }
+
+  if (!rendering.path) {
+    throw new UsageError('the raw client has no config file; print it instead of --write')
+  }
+
+  const merged = await mergeClientConfig(client, rendering.path, rendering.entry)
+  await mkdir(dirname(rendering.path), { recursive: true })
+  await writeFile(rendering.path, merged.raw, 'utf8')
+  io.log(`${merged.created ? 'Created' : 'Updated'} ${rendering.path}`)
+  io.log('Restart the client to pick up the new server.')
 }
 
 function requireArg(value: string | undefined, message: string): string {
@@ -319,6 +502,11 @@ function parseArgs(argv: string[]): ParsedArgs {
     allowWrite: false,
     admin: false,
     allowRawSql: false,
+    demo: false,
+    check: false,
+    write: false,
+    passwordStdin: false,
+    generatePassword: false,
     help: false,
     version: false,
   }
@@ -363,6 +551,40 @@ function parseArgs(argv: string[]): ParsedArgs {
       parsed.allowRawSql = true
       continue
     }
+    if (arg === '--demo') {
+      parsed.demo = true
+      continue
+    }
+    if (arg === '--check') {
+      parsed.check = true
+      continue
+    }
+    if (arg === '--write') {
+      parsed.write = true
+      continue
+    }
+    if (arg === '--password-stdin') {
+      parsed.passwordStdin = true
+      continue
+    }
+    if (arg === '--generate-password') {
+      parsed.generatePassword = true
+      continue
+    }
+    if (arg === '--print-config') {
+      const next = argv[index + 1]
+      if (next && isMcpClient(next)) {
+        parsed.printConfig = next
+        index += 1
+      } else if (!next || next.startsWith('-')) {
+        parsed.printConfig = 'opencode'
+      } else {
+        throw new UsageError(
+          `unknown client "${next}" for --print-config. Choose one of: ${MCP_CLIENTS.join(', ')}`,
+        )
+      }
+      continue
+    }
 
     const inline = splitFlag(arg)
     const flag = inline?.name ?? arg
@@ -395,8 +617,21 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--password-env':
         parsed.passwordEnv = takeValue(flag, inlineValue, argv, () => ++index)
         continue
+      case '--print-config': {
+        const value = inlineValue
+        if (!isMcpClient(value)) {
+          throw new UsageError(
+            `unknown client "${value}" for --print-config. Choose one of: ${MCP_CLIENTS.join(', ')}`,
+          )
+        }
+        parsed.printConfig = value
+        continue
+      }
       case '--user':
         parsed.user = takeValue(flag, inlineValue, argv, () => ++index)
+        continue
+      case '--demo-email':
+        parsed.demoEmail = takeValue(flag, inlineValue, argv, () => ++index)
         continue
       case '--tables': {
         const value = takeValue(flag, inlineValue, argv, () => ++index)
@@ -414,7 +649,15 @@ function parseArgs(argv: string[]): ParsedArgs {
     parsed.positionals.push(arg)
   }
 
+  if (parsed.passwordStdin && parsed.generatePassword) {
+    throw new UsageError('choose either --password-stdin or --generate-password')
+  }
+
   return parsed
+}
+
+function isMcpClient(value: string | undefined): value is McpClient {
+  return Boolean(value) && (MCP_CLIENTS as readonly string[]).includes(value as string)
 }
 
 function splitFlag(arg: string): { name: string; value: string } | undefined {
@@ -449,15 +692,17 @@ Usage
 
 Commands
   start                 Start the API server (default)
-  init [dir]            Create a starter config, .env.example and .gitignore
+  dev                   Start, then restart and regenerate when the config changes
+  init [dir]            Create a starter config, public/ page, .env.example and .gitignore
   migrate               Apply migrations and sync the schema
   mcp                   Serve the MCP tools for AI agents over stdio
   doctor                Validate the config and print a summary
+  gen                   Write openapi.json and the TypeScript client
   openapi [file]        Write the OpenAPI 3.1 document (default ./openapi.json)
   sdk [file]            Generate the TypeScript client (default ./sdk/mungil-client.ts)
   backup [dir|file]     Take a verified online backup (default ./backups)
   files gc              Collect unreferenced uploads (dry run; --apply deletes)
-  user create <email>   Create an account (MUNGIL_USER_PASSWORD)
+  user create <email>   Create an account (--generate-password prints one once)
   user passwd <email>   Reset a password and revoke sessions
   user role <email> <role>
                         Change a role (user or admin)
@@ -466,31 +711,41 @@ Commands
 
 Options
   -c, --config <path>   Config file (default: first mungil.config.* here)
-      --host <host>     Listen address for start
-      --port <port>     Listen port for start
+      --host <host>     Listen address for start/dev
+      --port <port>     Listen port for start/dev
   -o, --output <path>   Output path for openapi/sdk
       --role <role>     Role for user create (default: MUNGIL_USER_ROLE or user)
-      --user <email>    mcp: evaluate rules as this account (default: anonymous)
+      --generate-password
+                        user create/passwd: generate a password and print it once
+      --password-stdin  user create/passwd: read the password from stdin
+      --password-env <name>
+                        user create/passwd: read the password from this env var
+      --user <email>    mcp: evaluate rules as this account (default: config mcp.user)
       --tables <a,b>    mcp: expose only these tables
       --allow-write     mcp: register create/update/delete tools
       --admin           mcp: register schema, user, backup, audit tools
                         (requires --user with an admin account)
       --allow-raw-sql   mcp: expose query_sql and execute_sql (requires --admin)
-      --password-env <name>
-                        Read the password from this env var
-      --json            init: write mungil.config.json instead of .ts
+      --check           mcp: exercise the server; gen: fail when files are stale
+      --print-config [opencode|claude|cursor|vscode|raw]
+                        mcp: print a ready-to-paste client configuration
+      --write           mcp --print-config: update the client config file
+      --demo            init: working todo example (migrate, seed, demo account)
+      --demo-email <e>  init --demo: account email (default demo@example.com)
+      --json            init: write mungil.config.json; doctor: JSON output
       --force           init: overwrite existing files
       --apply           files gc: actually delete objects
   -h, --help            Show this help
   -v, --version         Print the CLI version
 
 Examples
-  npx mungilbase init
-  npx mungilbase migrate
-  MUNGIL_USER_PASSWORD='correct horse battery' npx mungilbase user create me@example.com
-  npx mungilbase start --port 8787
+  npx mungilbase init --demo
+  npx mungilbase start
+  npx mungilbase gen --check
+  npx mungilbase user create me@example.com --generate-password
+  npx mungilbase mcp --check
+  npx mungilbase mcp --print-config opencode --write
   npx mungilbase mcp --user me@example.com --allow-write
   npx mungilbase mcp --user admin@example.com --admin --allow-raw-sql
-  npx mungilbase sdk ./src/lib/mungil.ts
 `
 }

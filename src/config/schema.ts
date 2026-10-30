@@ -85,15 +85,15 @@ export const authConfigSchema = z
             maxAttempts: z.number().int().min(1).max(1_000).default(5),
             windowSeconds: z.number().int().min(60).max(86_400).default(900),
           })
-          .default({}),
+          .prefault({}),
         ip: z
           .object({
             maxAttempts: z.number().int().min(1).max(10_000).default(30),
             windowSeconds: z.number().int().min(60).max(86_400).default(600),
           })
-          .default({}),
+          .prefault({}),
       })
-      .default({}),
+      .prefault({}),
     passwordReset: z
       .object({
         enabled: z.boolean().default(true),
@@ -103,7 +103,7 @@ export const authConfigSchema = z
         resetUrl: z.string().url().optional(),
       })
       .strict()
-      .default({}),
+      .prefault({}),
     emailVerification: z
       .object({
         enabled: z.boolean().default(false),
@@ -115,7 +115,7 @@ export const authConfigSchema = z
         verifyUrl: z.string().url().optional(),
       })
       .strict()
-      .default({}),
+      .prefault({}),
     oauth: z
       .object({
         google: z
@@ -206,7 +206,7 @@ export const storageConfigSchema = z
         dir: z.string().min(1).default('./data/files'),
       })
       .strict()
-      .default({}),
+      .prefault({}),
     s3: z
       .object({
         bucket: z.string().min(1).max(255),
@@ -248,15 +248,47 @@ export const configSchema = z
         /** Requests in flight before new ones are shed with 503. */
         maxConcurrency: z.number().int().min(1).max(10_000).default(64),
       })
-      .default({}),
+      .prefault({}),
     database: z
       .object({
         file: z.string().min(1).default('./data/mungil.db'),
       })
-      .default({}),
+      .prefault({}),
     /** Browser origins allowed to call the API. Empty means same-origin only. */
     allowedOrigins: z.array(z.string().url()).default([]),
     logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+    /**
+     * Serve a frontend from this process, so `npx mungilbase start` is the
+     * whole app: static files on `/`, the API on `/api/v1`.
+     */
+    static: z
+      .object({
+        /** Directory to serve, resolved from the working directory. */
+        dir: z.string().min(1).default('./public'),
+        /** Return index.html for unknown paths (client-side routing). */
+        spa: z.boolean().default(false),
+        /** Cache-Control header value for static responses. */
+        cacheControl: z.string().default('no-cache'),
+      })
+      .optional(),
+    /**
+     * Defaults for `mungilbase mcp`. Flags passed on the command line win, so a
+     * client configuration can stay as short as `mungilbase mcp`.
+     */
+    mcp: z
+      .object({
+        /** Email of the account whose rules apply. Omit for anonymous access. */
+        user: z.string().email().optional(),
+        /** Restrict the exposed tables. */
+        tables: z.array(z.string().min(1)).optional(),
+        /** Register create/update/delete tools. */
+        allowWrite: z.boolean().default(false),
+        /** Register operator tools. Requires an admin account. */
+        admin: z.boolean().default(false),
+        /** Register query_sql/execute_sql. Requires admin mode. */
+        allowRawSql: z.boolean().default(false),
+      })
+      .optional(),
     /** Omit to disable authentication routes entirely. */
     auth: authConfigSchema.optional(),
     /** Required for password reset emails. */

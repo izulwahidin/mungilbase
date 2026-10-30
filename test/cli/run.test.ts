@@ -70,6 +70,67 @@ describe('mungilbase CLI', () => {
     expect(lines.join('\n')).toContain('Invalid config')
   })
 
+  it('creates an account with --generate-password and prints the password once', async () => {
+    const directory = await workspace()
+    await init({ directory, demo: true })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const { lines, io } = capture()
+
+    try {
+      const code = await runCli(
+        [
+          'user',
+          'create',
+          'agent@example.com',
+          '--generate-password',
+          '--config',
+          join(directory, 'mungil.config.ts'),
+        ],
+        io,
+      )
+      expect(code).toBe(0)
+      const output = [...log.mock.calls.flat(), ...lines].join('\n')
+      expect(output).toContain('<agent@example.com>')
+      expect(output).toMatch(/Password  \S{20,}/)
+      expect(output).toContain('Shown once')
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('rejects conflicting password sources', async () => {
+    const { lines, io } = capture()
+    expect(await runCli(['user', 'create', 'a@example.com', '--generate-password', '--password-stdin'], io)).toBe(2)
+    expect(lines.join('\n')).toContain('either --password-stdin or --generate-password')
+  })
+
+  it('prints a client configuration for the mcp command', async () => {
+    const directory = await workspace()
+    await init({ directory, demo: true })
+    const { lines, io } = capture()
+
+    const code = await runCli(
+      ['mcp', '--print-config', 'opencode', '--config', join(directory, 'mungil.config.ts')],
+      io,
+    )
+    expect(code).toBe(0)
+
+    const document = JSON.parse(lines.join('\n')) as {
+      mcp: { servers: { mungilbase: { type: string; command: string[]; cwd: string } } }
+    }
+    const entry = document.mcp.servers.mungilbase
+    expect(entry.type).toBe('local')
+    expect(entry.command).not.toContain('npx')
+    expect(entry.command).toEqual(expect.arrayContaining(['mcp', '--user', 'demo@example.com']))
+    expect(entry.cwd).toBe(directory)
+  })
+
+  it('rejects an unknown --print-config client', async () => {
+    const { lines, io } = capture()
+    expect(await runCli(['mcp', '--print-config', 'nope'], io)).toBe(2)
+    expect(lines.join('\n')).toContain('unknown client')
+  })
+
   it('treats a config path as the start argument', async () => {
     // Reaching `start` is enough here; it fails on a missing file before it
     // can open a listener.

@@ -50,7 +50,8 @@ describe('tableDdl', () => {
     expect(ddl.create).toContain('"created_at" TEXT NOT NULL DEFAULT')
     expect(ddl.create).toContain('"updated_at" TEXT NOT NULL DEFAULT')
     expect(ddl.create).toContain('"author_id" TEXT NOT NULL REFERENCES "users" ("id") ON DELETE RESTRICT')
-    expect(ddl.create).toContain('"published" INTEGER DEFAULT 0 CHECK ("published" IN (0, 1))')
+    // A non-null default means the column is NOT NULL, so the type is never null.
+    expect(ddl.create).toContain('"published" INTEGER NOT NULL DEFAULT 0 CHECK ("published" IN (0, 1))')
     expect(ddl.create).toContain('CHECK ("meta" IS NULL OR json_valid("meta"))')
     expect(ddl.indexes.map((index) => index.name)).toEqual([
       'idx_posts_author_id',

@@ -1,3 +1,4 @@
+import { createServer } from 'node:http'
 import { serve } from '@hono/node-server'
 import { loadConfig } from './config/load.js'
 import { openDatabase } from './db/connect.js'
@@ -48,6 +49,15 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const version = options.version ?? VERSION
   const config = await loadConfig(options.configPath)
   const dbFile = process.env.MUNGIL_DB_FILE ?? config.database.file
+  const host = options.host ?? process.env.HOST ?? config.server.host
+  const port = options.port ?? Number(process.env.PORT ?? config.server.port)
+
+  // Check the listener before touching the database. A second server that
+  // opens the same SQLite file (and runs migrations) while the first one is
+  // live is the one scenario that can cost data, so it must fail before the
+  // database is opened at all.
+  await assertPortFree(host, port)
+
   const db = openDatabase(dbFile)
 
   try {
@@ -82,27 +92,27 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 
     if (options.handleSignals !== false) installProcessHandlers(reportError)
 
-    const host = options.host ?? process.env.HOST ?? config.server.host
-    const port = options.port ?? Number(process.env.PORT ?? config.server.port)
-
-    const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
+    let boundPort = port
+    const server = await new Promise<ReturnType<typeof serve>>((ready, fail) => {
       let listening = false
       const instance = serve(
         { fetch: app.fetch, hostname: host, port },
         (info) => {
           listening = true
+          boundPort = info.port
           log({
             event: 'listening',
             host: info.address,
             port: info.port,
             database: dbFile,
+            ...(config.static ? { static: config.static.dir } : {}),
             version,
           })
-          resolve(instance)
+          ready(instance)
         },
       )
       instance.once('error', (error) => {
-        if (!listening) reject(error)
+        if (!listening) fail(error)
       })
     })
 
@@ -122,12 +132,40 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
       config,
       dbFile,
       host,
-      port,
+      // The real port, which differs from the requested one when it was 0.
+      port: boundPort,
       close,
     }
   } catch (error) {
     db.close()
     throw error
+  }
+}
+
+/**
+ * Binds the port once, then releases it, so `start` reports a busy port before
+ * migrations run against the live database.
+ */
+async function assertPortFree(host: string, port: number): Promise<void> {
+  if (!Number.isInteger(port) || port < 0) return
+
+  const probe = createServer()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      probe.once('error', (error: NodeJS.ErrnoException) => {
+        reject(
+          new Error(
+            error.code === 'EADDRINUSE'
+              ? `Port ${port} on ${host} is already in use. Another server may be running; ` +
+                'only one process at a time should migrate a database. Stop it and try again.'
+              : `Cannot listen on ${host}:${port}: ${error.message}`,
+          ),
+        )
+      })
+      probe.listen(port, host, () => probe.close(() => resolve()))
+    })
+  } finally {
+    probe.close()
   }
 }
 

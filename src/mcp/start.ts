@@ -38,6 +38,28 @@ export interface McpContext {
   identity: McpIdentity | null
   auth: AuthContext
   server: McpServer
+  /** Flags after config defaults were applied. */
+  options: Required<Pick<McpCommandOptions, 'allowWrite' | 'admin' | 'allowRawSql'>> &
+    Pick<McpCommandOptions, 'user' | 'tables'>
+}
+
+/**
+ * Command-line flags win, then `mcp` in the config file. A client config can
+ * therefore stay as short as `mungilbase mcp`.
+ */
+export function applyMcpDefaults(
+  options: McpCommandOptions,
+  config: MungilConfig,
+): McpCommandOptions {
+  const defaults = config.mcp
+  return {
+    ...options,
+    user: options.user ?? defaults?.user,
+    tables: options.tables ?? defaults?.tables,
+    allowWrite: (options.allowWrite ?? false) || (defaults?.allowWrite ?? false),
+    admin: (options.admin ?? false) || (defaults?.admin ?? false),
+    allowRawSql: (options.allowRawSql ?? false) || (defaults?.allowRawSql ?? false),
+  }
 }
 
 /**
@@ -47,7 +69,9 @@ export interface McpContext {
  */
 export async function openMcpContext(options: McpCommandOptions = {}): Promise<McpContext> {
   const configPath = findConfigPath(options.configPath)
-  const config = await loadConfig(configPath)
+  const loaded = await loadConfig(configPath)
+  const config = loaded
+  const effective = applyMcpDefaults(options, config)
   const dbFile = process.env.MUNGIL_DB_FILE ?? config.database.file
   const db = openDatabase(dbFile)
 
@@ -58,11 +82,11 @@ export async function openMcpContext(options: McpCommandOptions = {}): Promise<M
     ensureAuthSchema(db)
     ensureAuditSchema(db)
 
-    const identity = options.user ? await resolveIdentity(db, config, options.user) : null
-    if (options.admin && (!identity || identity.role !== 'admin')) {
+    const identity = effective.user ? await resolveIdentity(db, config, effective.user) : null
+    if (effective.admin && (!identity || identity.role !== 'admin')) {
       throw new Error('--admin requires --user with an account whose role is admin.')
     }
-    if (options.allowRawSql && !options.admin) {
+    if (effective.allowRawSql && !effective.admin) {
       throw new Error('--allow-raw-sql requires --admin.')
     }
 
@@ -82,16 +106,32 @@ export async function openMcpContext(options: McpCommandOptions = {}): Promise<M
       db,
       identity,
       auth,
-      allowWrite: options.allowWrite ?? false,
-      allowAdmin: options.admin ?? false,
-      allowRawSql: options.allowRawSql ?? false,
-      tables: options.tables,
+      allowWrite: effective.allowWrite ?? false,
+      allowAdmin: effective.admin ?? false,
+      allowRawSql: effective.allowRawSql ?? false,
+      tables: effective.tables,
       configPath,
       dbFile,
       version: options.version ?? VERSION,
     })
 
-    return { configPath, config, dbFile, registry, identity, auth, db, server }
+    return {
+      configPath,
+      config,
+      dbFile,
+      registry,
+      identity,
+      auth,
+      server,
+      db,
+      options: {
+        user: effective.user,
+        tables: effective.tables,
+        allowWrite: effective.allowWrite ?? false,
+        admin: effective.admin ?? false,
+        allowRawSql: effective.allowRawSql ?? false,
+      },
+    }
   } catch (error) {
     db.close()
     throw error
@@ -126,18 +166,52 @@ export async function runMcpServer(options: McpCommandOptions = {}): Promise<voi
   const context = await openMcpContext(options)
   const transport = new StdioServerTransport()
   await context.server.connect(transport)
+  const effective = context.options
 
   diag({
     event: 'mcp_ready',
     transport: 'stdio',
     identity: context.identity?.email ?? null,
-    write: options.allowWrite ?? false,
-    admin: options.admin ?? false,
-    rawSql: options.allowRawSql ?? false,
+    write: effective.allowWrite,
+    admin: effective.admin,
+    rawSql: effective.allowRawSql,
     tables: [...context.registry.tables.keys()],
     database: context.dbFile,
     version: options.version ?? VERSION,
   })
+
+  if (effective.allowWrite && !context.identity) {
+    diag({
+      level: 'warn',
+      event: 'mcp_write_without_identity',
+      message:
+        'Writes are enabled but the identity is anonymous; rules that compare auth.uid will deny them. Pass --user <email> or set mcp.user in the config.',
+    })
+  }
+
+  // A client launches this process over stdio. If nothing arrives, the launch
+  // path is the usual suspect (an npm/npx wrapper that does not forward the
+  // pipe), so say that instead of hanging silently.
+  let sawTraffic = false
+  const timer = setTimeout(() => {
+    if (sawTraffic) return
+    diag({
+      level: 'warn',
+      event: 'mcp_no_initialize',
+      message:
+        'No MCP request received in 10s. If a client launched this via npx, the npm wrapper may not forward stdio; point the client at the node binary and the mungilbase CLI file instead. Run `mungilbase mcp --print-config <client>` for a ready-made entry.',
+    })
+  }, 10_000)
+  timer.unref()
+
+  const write = process.stdout.write.bind(process.stdout)
+  process.stdout.write = ((...args: Parameters<typeof write>) => {
+    if (!sawTraffic) {
+      sawTraffic = true
+      clearTimeout(timer)
+    }
+    return write(...args)
+  }) as typeof process.stdout.write
 
   let shuttingDown = false
   const shutdown = (signal: string): void => {

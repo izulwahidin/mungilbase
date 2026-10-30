@@ -26,11 +26,13 @@ describe('mungilbase init', () => {
       'mungil.config.ts',
       '.env.example',
       '.gitignore',
+      'index.html',
     ])
 
     const config = await loadConfig(join(directory, 'mungil.config.ts'))
     expect(config.tables.map((table) => table.name)).toEqual(['notes'])
     expect(config.auth?.allowSignup).toBe(true)
+    expect(config.static).toMatchObject({ spa: true, dir: join(directory, 'public') })
   })
 
   it('writes a valid JSON config with --json', async () => {

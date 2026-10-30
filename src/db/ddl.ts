@@ -44,7 +44,10 @@ function columnDefinition(field: FieldConfig, options: { forAlter: boolean }): s
   const type = SQL_TYPES[field.type]
   const parts = [quote(field.name), type]
 
-  if (field.required) parts.push('NOT NULL')
+  // A default is a value the column always has. Making it NOT NULL keeps the
+  // generated types honest: `done` is a boolean, not boolean | null.
+  const nonNull = field.required || (field.default !== undefined && field.default !== null)
+  if (nonNull) parts.push('NOT NULL')
 
   if (field.unique) {
     // SQLite cannot add a UNIQUE column with ALTER TABLE. Refuse early with a

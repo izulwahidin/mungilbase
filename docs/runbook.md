@@ -425,3 +425,14 @@ panel session is a separate HttpOnly cookie valid for 8 hours
   backup target and restrict access.
 - `GET /api/v1/openapi.json` is public by design; it describes the API, not
   your data.
+## One server per database
+
+Only one `mungilbase start` process should own a database file (the local MCP
+server is the intended exception; it shares the file by design). `start` checks
+the port before opening the database, so a second instance fails instead of
+migrating a live one.
+
+Keep the SQLite file on a native filesystem. WSL `/mnt/<drive>` mounts and
+network shares do not provide reliable shared-memory/locking semantics, and a
+WAL database opened by two processes there can lose committed rows. `doctor`
+warns when it sees one.

@@ -52,8 +52,10 @@ mkdir -p "$DRILL_DIR/backups"
 
 CONFIG="./.drill/source.config.json"
 RESTORED_CONFIG="./.drill/restored.config.json"
-DB="./.drill/source.db"
-RESTORED="./.drill/restored.db"
+# Relative to the config file: the CLI resolves database.file from the config's
+# own directory, so a config inside .drill/ points at .drill/ too.
+DB="source.db"
+RESTORED="restored.db"
 
 write_config() {
   local file="$1"
@@ -83,6 +85,8 @@ JSON
 
 write_config "$CONFIG" "$DB"
 write_config "$RESTORED_CONFIG" "$RESTORED"
+DB="./.drill/$DB"
+RESTORED="./.drill/$RESTORED"
 
 echo "1/5  creating schema and seed rows"
 npx --no-install tsx src/cli/main.ts migrate --config "$CONFIG" > /dev/null

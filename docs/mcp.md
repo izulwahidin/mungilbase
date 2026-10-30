@@ -136,40 +136,62 @@ File fields cannot be written over MCP. Use the HTTP upload route:
 
 ## Client configuration
 
-### Claude Desktop
+Generate the entry instead of writing it by hand:
 
-Add this to `claude_desktop_config.json` (use absolute paths):
-
-```json
-{
-  "mcpServers": {
-    "mungilbase": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mungilbase",
-        "mcp",
-        "--config",
-        "/absolute/path/to/mungil.config.ts",
-        "--user",
-        "agent@example.com",
-        "--tables",
-        "notes,posts",
-        "--allow-write"
-      ]
-    }
-  }
-}
+```bash
+mungilbase mcp --print-config opencode          # opencode.json
+mungilbase mcp --print-config cursor --write    # .cursor/mcp.json
+mungilbase mcp --print-config vscode --write    # .vscode/mcp.json
+mungilbase mcp --print-config claude --write    # Claude Desktop config
+mungilbase mcp --print-config raw               # generic { command, args }
 ```
 
-On Windows, Claude Desktop launches commands without a shell. Use:
+The printed command is the Node binary plus the absolute path to the mungilbase
+CLI file, with an absolute `--config`. It deliberately does **not** use `npx`:
+the npm wrapper starts an extra process in front of the server and some clients
+do not forward stdin/stdout through it, so the handshake times out even though
+the server is running.
+
+Before wiring a client, prove the server works:
+
+```bash
+mungilbase mcp --check
+# MCP check ok — 0.6.0
+# Config    /srv/app/mungil.config.ts
+# Database  /srv/app/data/mungil.db
+# Identity  agent@example.com
+# Access    write=on admin=off rawSql=off
+# Tables    notes, posts
+# Tools     9: whoami, list_tables, ...
+```
+
+Defaults belong in the config, so the client entry stays short and can be the
+same on every machine:
+
+```ts
+mcp: { user: 'agent@example.com', tables: ['notes', 'posts'], allowWrite: true },
+```
+
+Command-line flags win over the config. A generated entry therefore repeats the
+effective flags; delete them from the config and the entry together.
+
+### Claude Desktop
+
+`mungilbase mcp --print-config claude --write` updates the file at the platform
+default location. Restart Claude Desktop afterwards. If you copy the entry by
+hand, use absolute paths:
 
 ```json
 {
   "mcpServers": {
     "mungilbase": {
-      "command": "cmd",
-      "args": ["/c", "npx", "-y", "mungilbase", "mcp", "--config", "C:\\\\path\\\\mungil.config.ts"]
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/srv/app/node_modules/mungilbase/dist/cli/main.js",
+        "mcp",
+        "--config",
+        "/srv/app/mungil.config.ts"
+      ]
     }
   }
 }
@@ -177,14 +199,42 @@ On Windows, Claude Desktop launches commands without a shell. Use:
 
 ### Cursor
 
-Create `.cursor/mcp.json` in the project:
+`mungilbase mcp --print-config cursor --write` creates `.cursor/mcp.json` with:
 
 ```json
 {
   "mcpServers": {
     "mungilbase": {
-      "command": "npx",
-      "args": ["-y", "mungilbase", "mcp", "--config", "./mungil.config.ts"]
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/srv/app/node_modules/mungilbase/dist/cli/main.js",
+        "mcp",
+        "--config",
+        "/srv/app/mungil.config.ts"
+      ]
+    }
+  }
+}
+```
+
+### OpenCode
+
+```bash
+mungilbase mcp --print-config opencode --write
+```
+
+writes `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "mungilbase": {
+        "type": "local",
+        "command": ["/usr/local/bin/node", "/srv/app/node_modules/mungilbase/dist/cli/main.js", "mcp", "--config", "/srv/app/mungil.config.ts"],
+        "cwd": "/srv/app"
+      }
     }
   }
 }
@@ -192,8 +242,19 @@ Create `.cursor/mcp.json` in the project:
 
 ### Any stdio MCP client
 
-Run `npx mungilbase mcp` as a child process. The protocol uses stdin/stdout;
-diagnostics go to stderr. Do not wrap stdout with a logger.
+Run the CLI as a child process and talk JSON-RPC on stdin/stdout; diagnostics go
+to stderr. Do not wrap stdout with a logger.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Client says "request timed out" but stderr shows `mcp_ready` | The launch path did not forward stdio (usually `npx`, or a shell wrapper) | Use `--print-config`; it emits the Node binary and the CLI file |
+| `mcp_no_initialize` warning after 10s | Same as above: the server started but saw no request | Same fix |
+| `No account with email …` | `--user` names an account that does not exist | `mungilbase user create … --generate-password` |
+| `rule_violation` on every write | Writes enabled without an identity, so `auth.uid` is null | Pass `--user`, or set `mcp.user` |
+| A different (empty) database | The old server resolved `database.file` from the process cwd | Relative paths now resolve from the config file; pass `--config` an absolute path |
+| Client config has comments | `--write` only merges plain JSON | Add the printed entry by hand |
 
 ## What the agent sees
 

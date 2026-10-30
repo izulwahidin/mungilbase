@@ -4,6 +4,65 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- `static: { dir, spa, cacheControl }` config: serve a frontend from the same
+  process and origin as the API. `/api/*`, `/admin`, `/health`, `/version` and
+  `/metrics` always win; traversal (including symlinks) is rejected; `spa`
+  falls back to `index.html` only for requests that accept `text/html`. `init`
+  now scaffolds `public/index.html` with it enabled.
+- `init --demo [--demo-email <email>]`: scaffolds a working todo app, applies
+  migrations, seeds three rows and creates an account with a generated password
+  printed once.
+- `mcp --check`: runs `initialize`, `tools/list` and `whoami` against the real
+  server over an in-memory transport, and prints identity, access, tables and
+  tools.
+- `mcp --print-config <opencode|claude|cursor|vscode|raw> [--write]`: emits a
+  client entry that uses the Node binary and absolute paths instead of `npx`,
+  and merges it into an existing config without touching other keys.
+- `mcp: { user, tables, allowWrite, admin, allowRawSql }` config defaults.
+  Command-line flags still win, so a client entry can be just `mungilbase mcp`.
+- MCP tools now declare `outputSchema`, and write tools document their
+  `{ row }` result.
+- `gen` writes `openapi.json` and the SDK together; `gen --check` exits 1 when
+  either is stale. `dev` restarts and regenerates when the config changes.
+- The CLI loads `./.env` when present (`--env-file <path>` / `MUNGIL_ENV_FILE`
+  for another file). Real environment variables win.
+- `user create|passwd --generate-password` (printed once), `--password-stdin`
+  and `MUNGIL_USER_PASSWORD_FILE`. The missing-password error now lists them.
+- `doctor` also reports the static directory, `.env` file, MCP defaults and
+  generated-file freshness, and accepts `--json`.
+- MCP logs `mcp_no_initialize` to stderr after 10s without a request, with the
+  npx/stdio hint.
+- `start` binds the port before opening the database and fails with a clear
+  message when it is busy. A second instance can no longer run migrations
+  against a database a live server is using.
+- `doctor` warns when the database file is on a WSL `/mnt/<drive>` mount or a
+  network share, where SQLite WAL can lose committed rows.
+- `RunningServer.port` reports the bound port, not the requested one (so
+  `port: 0` is usable from the library).
+
+### Changed
+
+- **Relative paths in the config (`database.file`, `storage.local.dir`,
+  `static.dir`) now resolve against the config file, not the process working
+  directory.** A client that launches `mungilbase mcp` from another directory
+  no longer opens (or creates) a different database.
+- A field with a non-null `default` is `NOT NULL` in SQLite and non-nullable in
+  the generated OpenAPI/schema (`done` is `boolean`, not `boolean | null`).
+  Existing columns are not altered; the change applies to new tables and new
+  columns.
+- `mcp --allow-write` with an anonymous identity now logs a warning: rules that
+  compare `auth.uid` will deny the writes.
+- Upgraded `zod` 3 → 4.6.7, `@hono/node-server` 1 → 2.1.5 and `vitest` 2 → 5.
+- Removed the accidental `mungilbase` self-dependency from `dependencies`.
+
+### Security
+
+- `npm audit` is clean. This clears the `@hono/node-server` static-path
+  advisory, the Vitest/tinypool/vite/esbuild dev-chain advisories, and the Zod
+  constrained-collection advisory.
+
 ## [0.6.0] — 2026-10-30
 
 ### Added

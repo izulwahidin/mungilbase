@@ -17,19 +17,31 @@ cd my-api
 npx mungilbase init
 ```
 
-`init` writes three files:
+`init` writes four files:
 
 | File | Purpose |
 |---|---|
 | `mungil.config.ts` | Tables, fields, access rules, server settings |
+| `public/index.html` | Frontend entry point, served by the same process |
 | `.env.example` | Optional environment overrides and secrets |
 | `.gitignore` | Keeps `data/`, backups and `.env` out of git |
 
-The starter config defines a `notes` table and opens signup so you can try the
-API immediately. Edit it before production: see [config](../README.md#config).
+The starter config defines a `notes` table, opens signup, and enables
+`static: { dir: './public', spa: true }`, so `mungilbase start` serves the page
+and the API on one port. Edit it before production: see
+[config](../README.md#config).
 
 Run `npx mungilbase init --json` if you prefer `mungil.config.json` (useful when
 the deployment cannot run a TypeScript loader).
+
+In a hurry? Skip to a working app:
+
+```bash
+npx mungilbase init --demo   # todos table, todo UI, seeded rows, demo account
+npx mungilbase start         # http://localhost:8787
+```
+
+`--demo` migrates, seeds three rows and prints a generated password once.
 
 ## 2. Apply the schema
 
@@ -53,12 +65,18 @@ Defaults are `0.0.0.0:8787` from the config. Override per run:
 npx mungilbase start --port 9000
 ```
 
+Open <http://localhost:8787>: the scaffolded page calls `/health` and links to
+the API, the OpenAPI document and the admin panel.
+
 Check it:
 
 ```bash
 curl localhost:8787/health
 curl localhost:8787/version
 ```
+
+While iterating on the config, `npx mungilbase dev` restarts the server and
+regenerates `openapi.json` and the SDK on every change.
 
 ## 4. Create an account
 
@@ -117,11 +135,17 @@ the auth methods.
 ## 7. Connect an AI agent (optional)
 
 ```bash
-npx mungilbase mcp --user me@example.com --tables notes
+npx mungilbase mcp --check
+npx mungilbase mcp --print-config opencode --write
 ```
 
-This starts a read-only MCP server over stdio (add `--allow-write` for
-mutating tools). Rule enforcement is identical to the HTTP API. See
+`--check` connects a real MCP client in-process and reports the identity,
+tables and tools, so a config or rule problem fails here instead of inside your
+agent. `--print-config` writes the client entry with the Node binary and
+absolute paths — no `npx`, which does not always forward stdio.
+
+Add `--allow-write` (or `mcp: { allowWrite: true }` in the config) for mutating
+tools. Rule enforcement is identical to the HTTP API. See
 [MCP for AI agents](mcp.md) for Claude Desktop and Cursor configuration.
 
 ## 8. Go further

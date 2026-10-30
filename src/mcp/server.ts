@@ -137,6 +137,15 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
       description:
         'Show the MCP identity, whether writes are enabled, and which tables this server exposes.',
       inputSchema: {},
+      outputSchema: {
+        version: z.string(),
+        identity: z.union([z.record(z.string(), z.unknown()), z.null()]),
+        auth: z.record(z.string(), z.unknown()),
+        writeEnabled: z.boolean(),
+        adminEnabled: z.boolean(),
+        rawSqlEnabled: z.boolean(),
+        tables: z.array(z.string()),
+      },
       annotations: READ_ONLY,
     },
     async () => ok({ ...info() }),
@@ -149,6 +158,10 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
       description:
         'List the tables exposed by this MCP server with their fields and access rules. Call this before querying.',
       inputSchema: {},
+      outputSchema: {
+        tables: z.array(z.record(z.string(), z.unknown())),
+        count: z.number(),
+      },
       annotations: READ_ONLY,
     },
     async () => ok({ tables: schemaSummary(), count: tableNames.length }),
@@ -176,7 +189,7 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
     {
       title: 'List rows',
       description:
-        'List rows visible to the active identity. Supports the MungilBase filter expression, sort (`title` or `-title`), limit (1-200) and offset.',
+        'List rows visible to the active identity. Supports the MungilBase filter expression, sort (`title` or `-title`), limit (1-200) and offset. Returns `{ items, limit, offset, count }`.',
       inputSchema: {
         table: z.string().describe('Table name'),
         filter: z
@@ -186,6 +199,12 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
         sort: z.string().optional().describe('Column name, or -column for descending'),
         limit: z.number().int().min(1).max(200).optional().describe('Default 50'),
         offset: z.number().int().min(0).optional(),
+      },
+      outputSchema: {
+        items: z.array(z.record(z.string(), z.unknown())),
+        limit: z.number(),
+        offset: z.number(),
+        count: z.number(),
       },
       annotations: READ_ONLY,
     },
@@ -200,11 +219,13 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
     'get_row',
     {
       title: 'Get row',
-      description: 'Get one row by id. Rows hidden by the view rule return not_found.',
+      description:
+        'Get one row by id. Rows hidden by the view rule return not_found. Returns `{ row }`.',
       inputSchema: {
         table: z.string().describe('Table name'),
         id: z.string().describe('Row id'),
       },
+      outputSchema: { row: z.record(z.string(), z.unknown()) },
       annotations: READ_ONLY,
     },
     async ({ table: name, id }) => {
@@ -218,8 +239,9 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
     {
       title: 'Get OpenAPI document',
       description:
-        'Return the OpenAPI 3.1 document generated from the config, limited to the tables this server exposes.',
+        'Return the OpenAPI 3.1 document generated from the config, limited to the tables this server exposes. Returns `{ openapi }`.',
       inputSchema: {},
+      outputSchema: { openapi: z.record(z.string(), z.unknown()) },
       annotations: READ_ONLY,
     },
     async () => ok({ openapi: buildOpenApi(publicConfig, version) }),
@@ -288,11 +310,12 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
       {
         title: 'Create row',
         description:
-          'Create a row. The create rule is evaluated inside SQLite; a denied write returns rule_violation and inserts nothing.',
+          'Create a row. The create rule is evaluated inside SQLite; a denied write returns rule_violation and inserts nothing. Returns `{ row }` with the stored values, including the new id.',
         inputSchema: {
           table: z.string().describe('Table name'),
-          values: z.record(z.unknown()).describe('Field values; unknown or invalid fields are rejected'),
+          values: z.record(z.string(), z.unknown()).describe('Field values; unknown or invalid fields are rejected'),
         },
+        outputSchema: { row: z.record(z.string(), z.unknown()) },
         annotations: { ...WRITE, destructiveHint: false, idempotentHint: false },
       },
       async ({ table: name, values }) => {
@@ -309,12 +332,13 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
       {
         title: 'Update row',
         description:
-          'Update one row by id. Only fields present in `values` are changed; the update rule is evaluated in SQLite.',
+          'Update one row by id. Only fields present in `values` are changed; the update rule is evaluated in SQLite. Returns `{ row }`.',
         inputSchema: {
           table: z.string().describe('Table name'),
           id: z.string().describe('Row id'),
-          values: z.record(z.unknown()).describe('Fields to change'),
+          values: z.record(z.string(), z.unknown()).describe('Fields to change'),
         },
+        outputSchema: { row: z.record(z.string(), z.unknown()) },
         annotations: { ...WRITE, destructiveHint: false, idempotentHint: true },
       },
       async ({ table: name, id, values }) => {

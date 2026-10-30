@@ -35,10 +35,23 @@ Requires Node.js 22 or newer.
 
 ```bash
 # or pin it: npm install --save-dev mungilbase
-npx mungilbase init      # mungil.config.ts, .env.example, .gitignore
+npx mungilbase init      # mungil.config.ts, public/, .env.example, .gitignore
 npx mungilbase migrate   # apply migrations + additively sync the schema
 npx mungilbase start
 curl localhost:8787/health
+```
+
+Open <http://localhost:8787> — `init` enables `static: { dir: './public' }`, so
+the same process serves the frontend and the API. Edit `public/index.html` for
+your UI, or `tables` in the config for your API.
+
+Want a working app in one command? `init --demo` scaffolds a todo list,
+migrates, seeds three rows and creates an account with a generated password:
+
+```bash
+npx mungilbase init --demo
+npx mungilbase start
+# Demo password is printed once by init.
 ```
 
 `init` creates a starter config with a `notes` table and signup enabled, so you
@@ -53,12 +66,19 @@ Everything the CLI can do:
 ```bash
 npx mungilbase --help
 npx mungilbase doctor                 # validate config + every rule
+npx mungilbase dev                    # restart + regenerate when the config changes
+npx mungilbase gen                    # openapi.json + typed SDK
+npx mungilbase gen --check            # fail when generated files are stale
 npx mungilbase openapi ./openapi.json
 npx mungilbase sdk ./sdk/client.ts
 npx mungilbase backup ./backups
 npx mungilbase files gc               # dry run; --apply deletes
-npx mungilbase mcp                    # MCP tools for AI agents (stdio)
+npx mungilbase mcp --check            # exercise the MCP server
+npx mungilbase mcp --print-config opencode
 ```
+
+The CLI loads `./.env` when it exists (real environment variables win). Pass
+`--env-file <path>` to use another file.
 
 See [docs/cli.md](docs/cli.md) for the full command reference and
 [docs/getting-started.md](docs/getting-started.md) for a guided first project.
@@ -265,6 +285,26 @@ there is no second query path. Table rules still apply unless
 
 It can list, create, edit and delete rows. There is no file upload support yet.
 
+### Static frontend
+
+Set `static` to serve a directory from the same process, on the same origin as
+the API:
+
+```ts
+static: { dir: './public', spa: true, cacheControl: 'no-cache' },
+```
+
+- `dir` is resolved against the config file.
+- `spa: true` returns `index.html` for unknown paths when the request accepts
+  `text/html`, so client-side routes work without another server.
+- `/api/*`, `/admin`, `/health`, `/version` and `/metrics` always win; an
+  unknown API path still returns a JSON 404.
+- Files outside the directory (including through symlinks) are never served.
+
+There is no cross-origin setup needed: the browser calls `/api/v1/...` on the
+same origin. A separate dev server (Vite, Next) still works — add its origin to
+`allowedOrigins` or set `appUrl` to it.
+
 ### Generated API spec
 
 `GET /api/v1/openapi.json` returns an OpenAPI 3.1 document generated from the
@@ -291,7 +331,8 @@ typechecks it on every run.
 `npx mungilbase mcp` starts a Model Context Protocol server over stdio. It
 exposes `list_tables`, `describe_table`, `list_rows`, `get_row`, `whoami`,
 `get_openapi`, plus schema/OpenAPI resources, using the same CRUD functions and
-row-level rules as the HTTP API. It is anonymous and read-only by default.
+row-level rules as the HTTP API. It is anonymous and read-only by default, and
+every write tool documents its `{ row }` result shape.
 
 ```bash
 # read-only, as one account, limited to two tables
@@ -306,6 +347,26 @@ npx mungilbase mcp --user admin@example.com --admin
 # plus query_sql and execute_sql (bypasses table rules; audited)
 npx mungilbase mcp --user admin@example.com --admin --allow-raw-sql
 ```
+
+Defaults can live in the config file, so a client configuration stays short:
+
+```ts
+mcp: { user: 'agent@example.com', tables: ['notes', 'posts'], allowWrite: true },
+```
+
+Command-line flags win over the config. Two commands make setup and debugging
+quick:
+
+```bash
+npx mungilbase mcp --check                 # initialize + tools/list + whoami, no pipe
+npx mungilbase mcp --print-config opencode # ready-to-paste entry (claude, cursor, vscode, raw)
+npx mungilbase mcp --print-config cursor --write
+```
+
+`--print-config` emits the real Node binary and the absolute CLI path, not
+`npx`: the npm wrapper is an extra process in front of the server and some
+clients do not forward stdio through it. If a client still shows nothing, the
+server logs a hint to stderr after 10s of silence.
 
 Admin mode requires an account whose role is `admin`; an agent cannot promote
 itself. File uploads and config-file editing are still not exposed.
@@ -365,10 +426,13 @@ Errors always look like:
 export default {
   appUrl: 'http://localhost:8787',   // your frontend origin
   allowedOrigins: [],                 // extra browser origins; empty = same-origin only
+  static: { dir: './public', spa: true }, // serve a frontend from this process (optional)
   database: { file: './data/mungil.db' },
   storage: { local: { dir: './data/files' } }, // for file fields
   server: { host: '0.0.0.0', port: 8787, maxConcurrency: 64 },
   auth: { allowSignup: false, adminBypassRules: false }, // omit auth to disable it
+  // Defaults for `mungilbase mcp`; flags still win.
+  mcp: { user: 'agent@example.com', tables: ['posts'], allowWrite: false },
   // Optional. Enables password reset emails; password comes from MUNGIL_SMTP_PASSWORD.
   // email: { provider: 'smtp', from: 'noreply@example.com', smtp: { host: 'localhost', user: 'mailer' } },
   tables: [{
@@ -391,6 +455,13 @@ export default {
   }],
 }
 ```
+
+Relative paths (`database.file`, `storage.local.dir`, `static.dir`) resolve
+against the config file, not the process working directory, so a client can
+launch `mungilbase mcp` from anywhere and still open the same database.
+
+A field with a non-null `default` is `NOT NULL` in SQLite and non-nullable in
+the generated schemas: `published` is `boolean`, not `boolean | null`.
 
 JSON configs are supported for deployments that cannot run a TypeScript
 loader: see `mungil.config.example.json`.

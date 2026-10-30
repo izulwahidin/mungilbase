@@ -60,11 +60,12 @@ describe('buildOpenApi', () => {
 
     const read = spec.components.schemas.postsRead
     expect(read.required).toEqual(
-      expect.arrayContaining(['id', 'title', 'created_at', 'updated_at']),
+      expect.arrayContaining(['id', 'title', 'published', 'views', 'created_at', 'updated_at']),
     )
     expect(read.properties.body.anyOf).toEqual([{ type: 'string' }, { type: 'null' }])
-    expect(read.properties.published.anyOf).toEqual([{ type: 'boolean' }, { type: 'null' }])
-    expect(read.properties.views.anyOf).toEqual([{ type: 'integer' }, { type: 'null' }])
+    // A non-null default means the column is NOT NULL, so reads never see null.
+    expect(read.properties.published).toEqual({ type: 'boolean' })
+    expect(read.properties.views).toEqual({ type: 'integer' })
     expect(read.properties.rating.anyOf).toEqual([{ type: 'number' }, { type: 'null' }])
     expect(read.properties.meta.anyOf).toEqual([{}, { type: 'null' }])
     expect(read.properties.published_at.anyOf).toEqual([{ type: 'string' }, { type: 'null' }])
