@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, extname, isAbsolute, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { configSchema, type MungilConfig } from './schema.js'
+import { configSchema, type MungilConfig, type MungilConfigInput } from './schema.js'
 
 export class ConfigError extends Error {
   override readonly name = 'ConfigError'
@@ -41,6 +41,19 @@ export function findConfigPath(explicit?: string): string {
   )
 }
 
+export interface LoadedConfig {
+  /** Absolute path of the file that was loaded. */
+  path: string
+  /** Validated config with defaults applied and relative paths resolved. */
+  config: MungilConfig
+  /**
+   * What the file itself contained, before defaults and path resolution.
+   * The admin panel edits this and writes it back, so values the operator did
+   * not write stay out of the file.
+   */
+  raw: MungilConfigInput
+}
+
 /**
  * Loads a config from a `.json` file or a JS/TS module with a default export.
  *
@@ -49,6 +62,11 @@ export function findConfigPath(explicit?: string): string {
  * `npx mungilbase` works without a separate build step or `tsx` CLI.
  */
 export async function loadConfig(file?: string): Promise<MungilConfig> {
+  return (await loadConfigFile(file)).config
+}
+
+/** Like `loadConfig`, but also reports the path and the file's own contents. */
+export async function loadConfigFile(file?: string): Promise<LoadedConfig> {
   const absolutePath = findConfigPath(file)
 
   if (!existsSync(absolutePath)) {
@@ -67,7 +85,13 @@ export async function loadConfig(file?: string): Promise<MungilConfig> {
       }
       raw = unwrapDefault(module)
     } else {
-      const module = (await import(pathToFileURL(absolutePath).href)) as { default?: unknown }
+      // Native `import()` caches by URL, which would hide a config file that
+      // the admin panel just rewrote. The mtime makes a changed file a new
+      // module while an unchanged one is still reused.
+      const version = statSync(absolutePath).mtimeMs
+      const module = (await import(`${pathToFileURL(absolutePath).href}?v=${version}`)) as {
+        default?: unknown
+      }
       raw = unwrapDefault(module)
     }
   } catch (error) {
@@ -89,7 +113,11 @@ export async function loadConfig(file?: string): Promise<MungilConfig> {
     throw new ConfigError(`Invalid config in ${absolutePath}:\n${issues}`)
   }
 
-  return resolveRelativePaths(parsed.data, dirname(absolutePath))
+  return {
+    path: absolutePath,
+    config: resolveRelativePaths(parsed.data, dirname(absolutePath)),
+    raw: raw as MungilConfigInput,
+  }
 }
 
 /**

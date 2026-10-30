@@ -335,6 +335,10 @@ the database on every request, so a role change applies to existing tokens
 immediately. Promotion alone does not bypass table rules unless
 `auth.adminBypassRules` is enabled.
 
+The first administrator does not need the CLI: a deployment with no `admin`
+account shows a one-time setup screen at `/admin/setup`. `user create --role
+admin` stays the headless and recovery path.
+
 ## Production environment
 
 | Variable | Used by |

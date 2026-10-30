@@ -77,7 +77,8 @@ launch; **out** = deliberately not handled.
 | Migration drift | done | SHA-256 checksums; unknown or edited migrations abort startup |
 | Malicious config | done (partial) | Strict schema, all five rules required, reference checks |
 | CSRF against the admin panel | done | Double-submit token on every POST, `SameSite=Lax` cookies, no CORS on `/admin` |
-| XSS in the admin panel | done | All rendered values are HTML-escaped; no client-side JS is shipped |
+| XSS in the admin panel | done | All rendered values are HTML-escaped, and the admin pages carry a `no-store` cache header. The only client script is `/admin/assets/app.js`, served by the same process and limited to theme switching, delete confirmations and the field repeater |
+| First-run admin takeover | accepted | While zero `admin` accounts exist, `/admin/setup` creates the first one; the page closes as soon as an admin exists and reopens only if every admin is deleted. Deploy a fresh instance on a trusted network, or claim it immediately. The event is audited as `auth.admin_setup` |
 | Path traversal through upload keys | done | Keys are generated server-side, matched against a strict pattern, and resolved under the storage root |
 | Malicious file content | partial | Per-field size and MIME-prefix limits, sandboxing CSP and `nosniff`; no magic-byte sniffing or malware scan |
 
@@ -86,7 +87,8 @@ launch; **out** = deliberately not handled.
 | Threat | Status | Mitigation |
 |---|---|---|
 | Denied access without a trace | done | `_mungil_audit` rows for `rule_violation`, `rate_limited`, `unauthorized` and `5xx`, with request id, user id, table, operation and resource id |
-| Admin changes untraceable | out of scope | No admin surface in v0.1; direct operator database access is outside the threat model |
+| Admin changes untraceable | done | Row writes are audited as `admin.create`/`admin.update`/`admin.delete`, logins as `auth.admin_login`, and schema edits as `admin.schema_update` (with the table names). Direct operator database access stays outside the threat model |
+| Schema editor corrupts the config | partial | The editor validates the whole config and compiles every rule before touching anything, then applies the additive DDL, writes the file through a temporary file plus rename, and keeps the previous version as `.bak`. Values that are not plain data in the original file are replaced by their resolved value; a deployment that needs functions in its config should keep the editor read-only (`createApp()` without `configPath`) |
 | Audit tampering by the application | done (design) | The app has no update or delete path for `_mungil_audit`; an operator with file access can still edit it |
 
 ### Information disclosure
@@ -123,7 +125,7 @@ launch; **out** = deliberately not handled.
 |---|---|---|
 | Admin role spoofing | done | Roles are a closed enum (`user`, `admin`) stored in the users table, read per request, exact match only. There is no role claim to forge |
 | Implicit admin bypass | done | `auth.adminBypassRules` defaults to false; promotion alone never disables rules |
-| Admin actions unaudited | done | `auth.admin_login`, `auth.admin_logout`, `admin.create`, `admin.update`, `admin.delete` are written to `_mungil_audit` |
+| Admin actions unaudited | done | `auth.admin_setup`, `auth.admin_login`, `auth.admin_logout`, `admin.create`, `admin.update`, `admin.delete` and `admin.schema_update` are written to `_mungil_audit` |
 | Admin panel cookie theft | partial | HttpOnly + `SameSite=Lax`, `Secure` when `appUrl` is HTTPS, 8-hour lifetime, revocable; no device binding |
 | MCP agent exceeds operator intent | done | Data writes need `--allow-write`; admin tools need `--admin` plus an admin identity; `--tables` narrows the surface; identity never comes from tool arguments; rules run in SQLite and writes are audited |
 | MCP raw SQL bypasses rules | accepted | Only with `--admin --allow-raw-sql`; `query_sql` is read-only and row-capped, `execute_sql` is arbitrary, and both are audited. The operator explicitly accepts this risk |

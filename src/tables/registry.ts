@@ -19,8 +19,16 @@ export interface RegisteredTable {
 }
 
 export interface Registry {
-  tables: ReadonlyMap<string, RegisteredTable>
+  readonly tables: ReadonlyMap<string, RegisteredTable>
   get(name: string): RegisteredTable | undefined
+  /**
+   * Replaces the whole schema in place, after validating it.
+   *
+   * Routes keep a reference to this object for the life of the process, so the
+   * admin panel can apply a schema edit without restarting the server. A
+   * registry that fails validation throws and stays untouched.
+   */
+  replace(config: MungilConfig): void
 }
 
 export class SchemaError extends Error {
@@ -35,6 +43,22 @@ export class SchemaError extends Error {
  * at request time.
  */
 export function createRegistry(config: MungilConfig): Registry {
+  const tables = buildTables(config)
+
+  return {
+    tables,
+    get(name) {
+      return tables.get(name)
+    },
+    replace(next) {
+      const replacement = buildTables(next)
+      tables.clear()
+      for (const [name, table] of replacement) tables.set(name, table)
+    },
+  }
+}
+
+function buildTables(config: MungilConfig): Map<string, RegisteredTable> {
   const tables = new Map<string, RegisteredTable>()
 
   for (const table of config.tables) {
@@ -61,10 +85,5 @@ export function createRegistry(config: MungilConfig): Registry {
     })
   }
 
-  return {
-    tables,
-    get(name) {
-      return tables.get(name)
-    },
-  }
+  return tables
 }

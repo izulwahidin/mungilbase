@@ -52,6 +52,12 @@ export interface AppDeps {
   reportError?: ErrorReporter
   /** Overrides provider clients built from config; tests use it. */
   oauthProviders?: OAuthProviders
+  /**
+   * Absolute path of the config file this app was built from. When set, the
+   * admin panel can edit tables and write them back; without it the schema
+   * editor is read-only, which is the right behaviour for an embedded app.
+   */
+  configPath?: string
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
@@ -155,6 +161,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       registry,
       config: deps.config,
       storage,
+      configPath: deps.configPath,
+      version: deps.version,
+      dbFile: deps.dbFile,
     })
   }
   if (deps.db) {

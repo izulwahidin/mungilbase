@@ -45,6 +45,10 @@ Open <http://localhost:8787> — `init` enables `static: { dir: './public' }`, s
 the same process serves the frontend and the API. Edit `public/index.html` for
 your UI, or `tables` in the config for your API.
 
+Then open <http://localhost:8787/admin>: a fresh deployment has no
+administrator, so the panel asks you to create the first one in the browser.
+No CLI command, no seed script.
+
 Want a working app in one command? `init --demo` scaffolds a todo list,
 migrates, seeds three rows and creates an account with a generated password:
 
@@ -277,13 +281,43 @@ npx mungilbase user role me@example.com admin
 
 ### Admin panel
 
-Server-rendered at `/admin`, no build step. Only accounts with the `admin` role
-can sign in. It uses a separate HttpOnly cookie session (8 hours by default),
-CSRF double-submit tokens, and goes through the same CRUD functions as the API —
-there is no second query path. Table rules still apply unless
-`auth.adminBypassRules` is enabled.
+A PocketBase-style console at `/admin`: sidebar navigation, light/dark theme,
+data browser, schema editor and a read-only view of the effective config. It is
+server-rendered with a small hand-written stylesheet and a ~150-line script, so
+there is still no build step and no frontend dependency.
 
-It can list, create, edit and delete rows. There is no file upload support yet.
+**First run.** While the deployment has no `admin` account, `/admin/setup`
+creates the first administrator from the browser. As soon as one exists the
+page closes and only the login form remains; it reopens only if every admin is
+deleted again (accounts can only be removed by an operator). Treat a fresh
+instance like any other install wizard: deploy it on a trusted network or claim
+it right after `start`.
+
+**Schema editor.** `/admin/schema` edits tables without touching the config by
+hand — fields and types, required/unique/default, file limits and references,
+the five rules, timestamps and extra indexes. Saving:
+
+1. validates the whole config (cross-references included) and compiles every
+   rule, so a typo cannot become an open table;
+2. applies the same additive schema sync the server uses at boot;
+3. rewrites the config file atomically and keeps the previous version as
+   `<config>.bak`;
+4. swaps the live schema, so new REST routes answer without a restart.
+
+Removing a table from the config revokes its routes immediately but leaves the
+SQLite table and its rows in place, so re-adding the same fields restores
+access. Renaming or dropping a column is still a migration. The editor writes
+what the file contained before defaults were applied, but any value that is not
+plain data (functions, `process.env` lookups) is replaced by its resolved
+value — review the diff. A deployment that embeds the app through `createApp()`
+without a `configPath` gets a read-only editor.
+
+**Access.** Only accounts with the `admin` role can sign in. The panel uses a
+separate HttpOnly cookie session (8 hours by default), CSRF double-submit
+tokens on every POST, `no-store` caching, and goes through the same CRUD
+functions as the API — there is no second query path. Table rules still apply
+unless `auth.adminBypassRules` is enabled. Row writes, logins and schema edits
+are audited. There is no file upload support in the row form yet.
 
 ### Static frontend
 
@@ -505,7 +539,8 @@ anonymous requests rather than an empty result.
 - [x] Email verification with an optional login gate and `auth.verified` rules
 - [x] OAuth login with Google and GitHub, linking by provider-verified email
 - [x] Roles (`user`, `admin`) with explicit admin rule bypass
-- [x] Server-rendered admin panel at `/admin` with CSRF-protected forms
+- [x] Web admin panel at `/admin`: browser first-run setup, data browser, schema
+      editor that writes the config file, settings overview, CSRF-protected forms
 - [x] File uploads to local or S3-compatible storage, with size/MIME limits,
       rule checks, automatic cleanup on replace/delete, and `files:gc`
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`

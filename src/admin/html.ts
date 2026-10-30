@@ -1,99 +1,164 @@
-import type { FieldConfig } from '../config/schema.js'
+import { OPERATIONS } from '../tables/registry.js'
 import type { RegisteredTable } from '../tables/registry.js'
+import type { MungilConfig } from '../config/schema.js'
+import { alert, badge, escapeHtml, icon, logoSvg, renderPage } from './layout.js'
 
-export function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+export { escapeHtml } from './layout.js'
+
+interface AdminUser {
+  email: string
+  role: string
 }
 
-function layout(title: string, userEmail: string | null, body: string): string {
-  const nav = userEmail
-    ? `<nav><a href="/admin">Tables</a><span class="who">${escapeHtml(userEmail)}</span></nav>`
-    : '<nav>MungilBase</nav>'
+function ruleBadges(table: RegisteredTable): string {
+  return OPERATIONS.map((operation) => {
+    const rule = table.rules[operation]
+    const tone = rule === null ? 'off' : rule === 'true' ? 'ok' : 'accent'
+    return `<span class="badge ${tone}" title="${escapeHtml(`${operation}: ${String(rule ?? 'null')}`)}">${operation}</span>`
+  }).join('')
+}
 
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex">
-  <title>${escapeHtml(title)} · MungilBase</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0; }
-    header { background: #111; color: #eee; padding: .6rem 1.2rem; display: flex; gap: 1.5rem; align-items: center; }
-    header strong { font-size: 1rem; }
-    header a { color: #9fd; text-decoration: none; }
-    nav { display: flex; gap: 1rem; align-items: center; }
-    .who { opacity: .7; font-size: .9rem; }
-    main { max-width: 1000px; margin: 1.5rem auto; padding: 0 1rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #ddd; vertical-align: top; }
-    code { background: rgba(127,127,127,.15); padding: .1rem .25rem; border-radius: 3px; }
-    label { display: block; margin: .8rem 0 .2rem; font-weight: 600; }
-    input[type=text], input[type=number], input[type=password], select, textarea { width: 100%; box-sizing: border-box; padding: .45rem; font: inherit; }
-    textarea { min-height: 8rem; font-family: ui-monospace, monospace; }
-    button { padding: .5rem .9rem; font: inherit; cursor: pointer; }
-    .error { background: #fee; color: #900; border: 1px solid #f99; padding: .6rem; margin: 1rem 0; }
-    .muted { opacity: .65; }
-    .actions { margin-top: 1rem; display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
-    form.inline { display: inline; }
-  </style>
-</head>
-<body>
-  <header><strong>MungilBase</strong>${nav}</header>
-  <main>${body}</main>
-</body>
-</html>`
+function fieldCount(table: RegisteredTable): string {
+  const count = table.config.fields.length
+  return `${count} field${count === 1 ? '' : 's'}`
+}
+
+/* Login and first-run setup ------------------------------------------------ */
+
+function authCard(body: string): string {
+  return drawBare(
+    `<div class="auth-wrap"><div class="auth-card">
+      <div class="auth-brand">
+        ${logoSvg(34)}
+        <span><strong>MungilBase</strong><small>Admin panel</small></span>
+      </div>
+      ${body}
+    </div></div>`,
+  )
+}
+
+function drawBare(body: string): string {
+  return renderPage({ title: 'Admin', body, bare: true })
 }
 
 export function loginPage(csrf: string, error?: string): string {
-  return layout(
-    'Log in',
-    null,
-    `<h1>Admin login</h1>
-     ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
+  return authCard(
+    `<h1>Sign in</h1>
+     <p class="sub">Only accounts with the <code>admin</code> role can open this panel.</p>
+     ${error ? alert('error', escapeHtml(error)) : ''}
      <form method="post" action="/admin/login">
        <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
-       <label for="email">Email</label>
-       <input id="email" name="email" type="text" autocomplete="username" required>
-       <label for="password">Password</label>
-       <input id="password" name="password" type="password" autocomplete="current-password" required>
-       <div class="actions"><button type="submit">Log in</button></div>
-     </form>
-     <p class="muted">Only accounts with the <code>admin</code> role can sign in here.</p>`,
+       <div class="field">
+         <label for="email">Email</label>
+         <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+       </div>
+       <div class="field">
+         <label for="password">Password</label>
+         <input id="password" name="password" type="password" autocomplete="current-password" required>
+       </div>
+       <div class="actions"><button type="submit" class="btn btn-primary">Sign in ${icon('chevronRight')}</button></div>
+     </form>`,
   )
 }
 
-function logoutForm(csrf: string): string {
-  return `<form method="post" action="/admin/logout" class="inline">
-    <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
-    <button type="submit">Log out</button>
-  </form>`
+export function setupPage(
+  csrf: string,
+  options: { error?: string; issues?: string[]; email?: string } = {},
+): string {
+  const issues = options.issues?.length
+    ? `<ul>${options.issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join('')}</ul>`
+    : ''
+
+  return authCard(
+    `<h1>Create the administrator</h1>
+     <p class="sub">This deployment has no <code>admin</code> account yet, so this page is open once.
+     The account you create here can manage data and the schema.</p>
+     ${options.error ? alert('error', `${escapeHtml(options.error)}${issues}`) : ''}
+     <form method="post" action="/admin/setup">
+       <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
+       <div class="field">
+         <label for="email">Email</label>
+         <input id="email" name="email" type="email" autocomplete="username" required autofocus
+                value="${escapeHtml(options.email ?? '')}">
+       </div>
+       <div class="field">
+         <label for="password">Password</label>
+         <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8">
+         <span class="hint">At least the configured minimum length (10 characters by default).</span>
+       </div>
+       <div class="field">
+         <label for="confirm">Repeat password</label>
+         <input id="confirm" name="confirm" type="password" autocomplete="new-password" required minlength="8">
+       </div>
+       <div class="actions"><button type="submit" class="btn btn-primary">Create administrator ${icon('chevronRight')}</button></div>
+     </form>
+     <p class="hint" style="margin-top:1rem">After this account exists the page closes and only
+     <a href="/admin/login">sign in</a> remains.</p>`,
+  )
 }
 
-export function dashboardPage(tables: readonly string[], csrf: string, userEmail: string): string {
-  const rows = tables
-    .map(
-      (table) => `<tr>
-        <td><a href="/admin/tables/${encodeURIComponent(table)}">${escapeHtml(table)}</a></td>
-        <td><a href="/admin/tables/${encodeURIComponent(table)}/new">new</a></td>
-      </tr>`,
-    )
+/* Dashboard --------------------------------------------------------------- */
+
+export function dashboardPage(
+  tables: readonly RegisteredTable[],
+  csrf: string,
+  user: AdminUser,
+  message?: string,
+): string {
+  const tiles = tables
+    .map((table) => {
+      const timestamp = table.config.timestamps ? badge('timestamps') : ''
+      const indexes = table.config.indexes.length ? badge(`${table.config.indexes.length} indexes`) : ''
+      return `<a class="tile" href="/admin/tables/${encodeURIComponent(table.name)}">
+        <div class="tile-title">${icon('table')}${escapeHtml(table.name)}</div>
+        <div class="meta">
+          ${badge(fieldCount(table))}${timestamp}${indexes}
+        </div>
+        <div class="meta">${ruleBadges(table)}</div>
+      </a>`
+    })
     .join('')
 
-  return layout(
-    'Tables',
-    userEmail,
-    `<h1>Tables</h1>
-     <div class="actions">${logoutForm(csrf)}</div>
-     <table><thead><tr><th>Table</th><th></th></tr></thead><tbody>${rows}</tbody></table>`,
-  )
+  const body = tables.length
+    ? `<div class="grid">${tiles}</div>`
+    : `<div class="card card-body empty">
+        ${icon('database')}
+        <h3>No tables yet</h3>
+        <p>A table is a small set of fields plus five access rules. Define the first one here and it
+        is written to your config file and created in SQLite immediately.</p>
+        <a class="btn btn-primary" href="/admin/schema/new">${icon('plus')}New table</a>
+      </div>`
+
+  return renderPage({
+    title: 'Data',
+    user,
+    csrf,
+    active: 'tables',
+    wide: true,
+    body: `${
+      message
+        ? `<div data-flash>${alert('ok', escapeHtml(message))}</div>`
+        : ''
+    }
+    <div class="page-head">
+      <div>
+        <h1>Data</h1>
+        <p class="sub">Every table in the config, newest first. Row access still honours each table's rules.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="/admin/schema">${icon('sliders')}Schema</a>
+        <a class="btn btn-primary" href="/admin/schema/new">${icon('plus')}New table</a>
+      </div>
+    </div>
+    ${body}
+    <p class="hint" style="margin-top:1rem">
+      Badges under each table show the five rules: <span class="badge ok">green</span> public,
+      <span class="badge accent">indigo</span> conditional, <span class="badge off">grey</span> denied.
+    </p>`,
+  })
 }
+
+/* Row list ---------------------------------------------------------------- */
 
 function cell(value: unknown): string {
   if (value === null || value === undefined) return '<span class="muted">null</span>'
@@ -109,7 +174,7 @@ export function listPage(
   rows: Record<string, unknown>[],
   page: { limit: number; offset: number },
   csrf: string,
-  userEmail: string,
+  user: AdminUser,
   message?: string,
 ): string {
   const columns = new Set<string>(['id'])
@@ -119,14 +184,22 @@ export function listPage(
     columns.add('updated_at')
   }
 
-  const header = [...columns].map((column) => `<th>${escapeHtml(column)}</th>`).join('')
+  const header = [...columns]
+    .map((column) => {
+      const field = table.config.fields.find((candidate) => candidate.name === column)
+      return `<th>${escapeHtml(column)}${
+        field ? `<span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0"> · ${escapeHtml(field.type)}</span>` : ''
+      }</th>`
+    })
+    .join('')
+
   const body = rows
     .map((row) => {
       const cells = [...columns]
         .map((column) => {
           if (column !== 'id') return `<td>${cell(row[column])}</td>`
           const id = String(row.id)
-          return `<td><a href="/admin/tables/${encodeURIComponent(table.name)}/${encodeURIComponent(id)}"><code>${escapeHtml(id.slice(0, 8))}…</code></a></td>`
+          return `<td class="nowrap"><a href="/admin/tables/${encodeURIComponent(table.name)}/${encodeURIComponent(id)}"><code>${escapeHtml(id.slice(0, 8))}…</code></a></td>`
         })
         .join('')
       return `<tr>${cells}</tr>`
@@ -135,60 +208,81 @@ export function listPage(
 
   const previous =
     page.offset > 0
-      ? `<a href="?limit=${page.limit}&offset=${Math.max(0, page.offset - page.limit)}">previous</a>`
-      : ''
+      ? `<a class="btn btn-sm" href="?limit=${page.limit}&offset=${Math.max(0, page.offset - page.limit)}">${icon('chevronLeft')}Previous</a>`
+      : `<span class="btn btn-sm" aria-disabled="true" style="opacity:.5">${icon('chevronLeft')}Previous</span>`
   const next =
     rows.length === page.limit
-      ? `<a href="?limit=${page.limit}&offset=${page.offset + page.limit}">next</a>`
-      : ''
+      ? `<a class="btn btn-sm" href="?limit=${page.limit}&offset=${page.offset + page.limit}">Next${icon('chevronRight')}</a>`
+      : `<span class="btn btn-sm" aria-disabled="true" style="opacity:.5">Next${icon('chevronRight')}</span>`
 
-  return layout(
-    table.name,
-    userEmail,
-    `${message ? `<div class="error">${escapeHtml(message)}</div>` : ''}
-     <h1>${escapeHtml(table.name)}</h1>
-     <div class="actions">
-       <a href="/admin/tables/${encodeURIComponent(table.name)}/new">New row</a>
-       <span class="muted">offset ${page.offset}, limit ${page.limit}</span>
-       <span class="muted">${[previous, next].filter(Boolean).join(' · ')}</span>
-       ${logoutForm(csrf)}
-     </div>
-     ${
-       rows.length
-         ? `<table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`
-         : '<p class="muted">No visible rows (or the list rule hides them).</p>'
-     }`,
-  )
+  return renderPage({
+    title: table.name,
+    user,
+    csrf,
+    active: 'tables',
+    wide: true,
+    breadcrumbs: [{ label: 'Data', href: '/admin' }, { label: table.name }],
+    body: `${message ? `<div data-flash>${alert('ok', escapeHtml(message))}</div>` : ''}
+    <div class="page-head">
+      <div>
+        <h1>${escapeHtml(table.name)}</h1>
+        <p class="sub">${escapeHtml(fieldCount(table))} · ${escapeHtml(table.config.timestamps ? 'timestamps on' : 'no timestamps')}</p>
+        <div class="actions" style="margin-top:.5rem">${ruleBadges(table)}</div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="/admin/schema/${encodeURIComponent(table.name)}">${icon('sliders')}Edit schema</a>
+        <a class="btn btn-primary" href="/admin/tables/${encodeURIComponent(table.name)}/new">${icon('plus')}New row</a>
+      </div>
+    </div>
+    ${
+      rows.length
+        ? `<div class="table-wrap"><table class="data"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`
+        : `<div class="card card-body empty">
+            ${icon('database')}
+            <h3>No visible rows</h3>
+            <p>The table is empty, or its <code>list</code> rule hides every row from your account.</p>
+            <a class="btn btn-primary" href="/admin/tables/${encodeURIComponent(table.name)}/new">${icon('plus')}Create the first row</a>
+          </div>`
+    }
+    <div class="pager">
+      <span>Showing ${rows.length} row${rows.length === 1 ? '' : 's'} from offset ${page.offset}</span>
+      ${previous}${next}
+    </div>`,
+  })
 }
 
-function formField(field: FieldConfig, value: unknown): string {
+/* Row form ---------------------------------------------------------------- */
+
+function formField(field: RegisteredTable['config']['fields'][number], value: unknown): string {
   const id = `f_${field.name}`
-  const required = field.required ? 'required' : ''
-  const label = `<label for="${id}">${escapeHtml(field.name)}${field.required ? ' *' : ''} <span class="muted">${escapeHtml(field.type)}</span></label>`
+  const required = field.required ? ' required' : ''
+  const label = `<label for="${id}">${escapeHtml(field.name)}${field.required ? ' *' : ''}
+    <span class="muted" style="font-weight:500">${escapeHtml(field.type)}</span></label>`
 
   switch (field.type) {
     case 'boolean': {
       const current = value === true || value === 1
-      return `${label}<select id="${id}" name="${id}">
+      return `<div class="field">${label}<select id="${id}" name="${id}">
         <option value="true"${current ? ' selected' : ''}>true</option>
         <option value="false"${current ? '' : ' selected'}>false</option>
-      </select>`
+      </select></div>`
     }
     case 'json': {
       const text = value === null || value === undefined ? '' : JSON.stringify(value, null, 2)
-      return `${label}<textarea id="${id}" name="${id}">${escapeHtml(text)}</textarea>`
+      return `<div class="field">${label}<textarea class="code" id="${id}" name="${id}" placeholder="null">${escapeHtml(text)}</textarea>
+        <span class="hint">Stored as JSON text.</span></div>`
     }
     case 'integer':
-      return `${label}<input id="${id}" name="${id}" type="number" step="1" ${required} value="${escapeHtml(value ?? '')}">`
+      return `<div class="field">${label}<input id="${id}" name="${id}" type="number" step="1"${required} value="${escapeHtml(value ?? '')}"></div>`
     case 'real':
-      return `${label}<input id="${id}" name="${id}" type="number" step="any" ${required} value="${escapeHtml(value ?? '')}">`
+      return `<div class="field">${label}<input id="${id}" name="${id}" type="number" step="any"${required} value="${escapeHtml(value ?? '')}"></div>`
     case 'date':
-      return `${label}<input id="${id}" name="${id}" type="text" placeholder="2026-01-01T00:00:00.000Z" ${required} value="${escapeHtml(value ?? '')}">`
+      return `<div class="field">${label}<input id="${id}" name="${id}" type="text" placeholder="2026-01-01T00:00:00.000Z"${required} value="${escapeHtml(value ?? '')}"></div>`
     case 'text':
-      return `${label}<input id="${id}" name="${id}" type="text" ${required} value="${escapeHtml(value ?? '')}">`
+      return `<div class="field">${label}<input id="${id}" name="${id}" type="text"${required} value="${escapeHtml(value ?? '')}"></div>`
     case 'file':
-      return `${label}<input id="${id}" name="${id}" type="text" placeholder="stored file key" value="${escapeHtml(value ?? '')}">
-        <p class="muted">Upload with POST /api/v1/:table/:id/files/${escapeHtml(field.name)}, then paste the returned key here.</p>`
+      return `<div class="field">${label}<input id="${id}" name="${id}" type="text" placeholder="stored file key" value="${escapeHtml(value ?? '')}">
+        <span class="hint">Upload with <code>POST /api/v1/:table/:id/files/${escapeHtml(field.name)}</code>, then paste the returned key here.</span></div>`
   }
 }
 
@@ -197,6 +291,7 @@ export function recordPage(
   row: Record<string, unknown> | null,
   csrf: string,
   error?: string,
+  user?: AdminUser,
 ): string {
   const fields = table.config.fields
     .map((field) => formField(field, row?.[field.name] ?? field.default ?? null))
@@ -207,37 +302,182 @@ export function recordPage(
     : `/admin/tables/${encodeURIComponent(table.name)}`
 
   const deleteForm = row
-    ? `<form method="post" action="${action}/delete" class="inline"
-            onsubmit="return confirm('Delete this row?')">
+    ? `<div class="actions"><form method="post" action="${action}/delete" class="inline"
+            data-confirm="Delete this row? This cannot be undone.">
          <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
-         <button type="submit">Delete</button>
-       </form>`
+         <button type="submit" class="btn btn-danger">${icon('trash')}Delete row</button>
+       </form></div>`
     : ''
 
-  return layout(
-    row ? `Edit ${table.name}` : `New ${table.name}`,
-    null,
-    `${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
-     <h1>${row ? 'Edit' : 'New'} ${escapeHtml(table.name)}</h1>
-     ${row ? `<p class="muted">id <code>${escapeHtml(row.id)}</code></p>` : ''}
-     <form method="post" action="${action}">
-       <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
-       ${fields}
-       <div class="actions">
-         <button type="submit">${row ? 'Save' : 'Create'}</button>
-         <a href="/admin/tables/${encodeURIComponent(table.name)}">Cancel</a>
-         ${deleteForm}
-       </div>
-     </form>`,
-  )
+  return renderPage({
+    title: row ? `Edit ${table.name}` : `New ${table.name}`,
+    user: user ?? null,
+    csrf,
+    active: 'tables',
+    breadcrumbs: [
+      { label: 'Data', href: '/admin' },
+      { label: table.name, href: `/admin/tables/${encodeURIComponent(table.name)}` },
+      { label: row ? 'Edit' : 'New' },
+    ],
+    body: `${error ? alert('error', escapeHtml(error)) : ''}
+    <div class="page-head">
+      <div>
+        <h1>${row ? 'Edit row' : 'New row'}</h1>
+        <p class="sub">${row ? `id <code>${escapeHtml(row.id)}</code>` : `Table <code>${escapeHtml(table.name)}</code> · every rule is checked on save.`}</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <form method="post" action="${action}">
+          <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
+          ${fields}
+          <div class="actions">
+            <button type="submit" class="btn btn-primary">${row ? 'Save changes' : 'Create row'}</button>
+            <a class="btn" href="/admin/tables/${encodeURIComponent(table.name)}">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+    ${
+      deleteForm
+        ? `<div class="card"><header><h2>Danger zone</h2></header><div class="card-body">
+             <p class="hint">Deleting a row cannot be undone. Files attached to it are removed too.</p>
+             ${deleteForm}
+           </div></div>`
+        : ''
+    }`,
+  })
 }
 
-export function errorPage(message: string): string {
-  return layout(
-    'Error',
-    null,
-    `<h1>Error</h1>
-     <div class="error">${escapeHtml(message)}</div>
-     <p><a href="/admin">Back to tables</a></p>`,
-  )
+/* Settings ---------------------------------------------------------------- */
+
+export interface SettingsView {
+  config: MungilConfig
+  configPath?: string
+  version: string
+  dbFile?: string
+  tableCount: number
+}
+
+function kv(rows: [string, string][]): string {
+  return `<dl class="dl">${rows
+    .map(([term, value]) => `<dt>${escapeHtml(term)}</dt><dd>${value}</dd>`)
+    .join('')}</dl>`
+}
+
+function value(text: string | number | boolean | null | undefined): string {
+  if (text === null || text === undefined || text === '') return '<span class="muted">not set</span>'
+  if (typeof text === 'boolean') return text ? badge('on', 'ok') : badge('off', 'off')
+  return `<code>${escapeHtml(text)}</code>`
+}
+
+function yn(on: boolean, onText = 'on', offText = 'off'): string {
+  return on ? badge(onText, 'ok') : badge(offText, 'off')
+}
+
+export function settingsPage(view: SettingsView, csrf: string, user: AdminUser): string {
+  const { config } = view
+  const auth = config.auth
+
+  const application = kv([
+    ['Version', value(view.version)],
+    ['Public URL', value(config.appUrl)],
+    ['Listen address', value(`${config.server.host}:${config.server.port}`)],
+    ['Database', value(view.dbFile)],
+    ['Static files', config.static ? `<code>${escapeHtml(config.static.dir)}</code> ${yn(config.static.spa, 'SPA', 'plain')}` : value(null)],
+    ['Allowed origins', config.allowedOrigins.length ? config.allowedOrigins.map((origin) => `<code>${escapeHtml(origin)}</code>`).join(', ') : value(null)],
+    ['Log level', value(config.logLevel)],
+  ])
+
+  const authentication = auth
+    ? kv([
+        ['Signup', yn(auth.allowSignup, 'open', 'closed')],
+        ['Admin rule bypass', yn(auth.adminBypassRules)],
+        ['Access token TTL', value(`${auth.accessTokenTtlSeconds}s`)],
+        ['Refresh token TTL', value(`${auth.refreshTokenTtlSeconds}s`)],
+        ['Admin session TTL', value(`${auth.adminSessionTtlSeconds}s`)],
+        ['Minimum password length', value(auth.minPasswordLength)],
+        ['Email verification', yn(auth.emailVerification.enabled, 'required', 'off')],
+        ['Password reset', yn(auth.passwordReset.enabled)],
+        ['OAuth providers', auth.oauth ? Object.keys(auth.oauth).join(', ') || 'none' : 'none'],
+      ])
+    : `<p class="hint">Authentication is disabled: no <code>auth</code> block is set in the config, so there is no admin panel login.</p>`
+
+  const storage = kv([
+    ['Provider', value(config.storage?.provider ?? 'local')],
+    ['Local directory', value(config.storage?.local.dir)],
+    ['S3 bucket', value(config.storage?.s3?.bucket)],
+    ['Tables', value(view.tableCount)],
+  ])
+
+  const mcp = config.mcp
+    ? kv([
+        ['Default user', value(config.mcp.user)],
+        ['Exposed tables', config.mcp.tables?.join(', ') || 'all'],
+        ['Writes', yn(config.mcp.allowWrite)],
+        ['Admin tools', yn(config.mcp.admin)],
+        ['Raw SQL', yn(config.mcp.allowRawSql)],
+      ])
+    : `<p class="hint">No <code>mcp</code> defaults. Run <code>npx mungilbase mcp --print-config</code> to wire up a client.</p>`
+
+  const editing = view.configPath
+    ? `<p class="hint">Schema saves rewrite <code>${escapeHtml(view.configPath)}</code> and keep the previous
+       version as <code>${escapeHtml(view.configPath)}.bak</code>. Deployments that embed MungilBase through
+       <code>createApp()</code> see a read-only editor instead.</p>`
+    : alert('warn', 'The schema editor is read-only in this process because no config file path was provided.')
+
+  return renderPage({
+    title: 'Settings',
+    user,
+    csrf,
+    active: 'settings',
+    body: `<div class="page-head">
+      <div>
+        <h1>Settings</h1>
+        <p class="sub">The effective configuration this process is running with. Edit <code>mungil.config.ts</code> to change it.</p>
+      </div>
+    </div>
+    <div class="card">
+      <header><h2>Application</h2></header>
+      <div class="card-body">${application}</div>
+    </div>
+    <div class="card">
+      <header><h2>Authentication</h2></header>
+      <div class="card-body">${authentication}</div>
+    </div>
+    <div class="card">
+      <header><h2>Data and storage</h2></header>
+      <div class="card-body">${storage}</div>
+    </div>
+    <div class="card">
+      <header><h2>AI agents (MCP)</h2></header>
+      <div class="card-body">${mcp}</div>
+    </div>
+    <div class="card">
+      <header><h2>Authoring</h2></header>
+      <div class="card-body">
+        ${kv([
+          ['Config file', value(view.configPath)],
+          ['Signed in as', value(user.email)],
+        ])}
+        ${editing}
+      </div>
+    </div>
+    <p class="hint">Copy of the config file, in JSON, follows.</p>
+    <details class="card"><summary style="cursor:pointer;padding:.8rem 1rem;font-weight:600">Effective JSON</summary>
+      <div class="card-body"><textarea class="code" rows="18" readonly>${escapeHtml(JSON.stringify(config, null, 2))}</textarea></div>
+    </details>`,
+  })
+}
+
+/* Errors ------------------------------------------------------------------ */
+
+export function errorPage(message: string, user?: AdminUser | null): string {
+  return renderPage({
+    title: 'Error',
+    user: user ?? null,
+    body: `<div class="page-head"><div><h1>Something went wrong</h1></div></div>
+      ${alert('error', escapeHtml(message))}
+      <div class="actions"><a class="btn" href="/admin">${icon('arrowLeft')}Back to data</a></div>`,
+  })
 }

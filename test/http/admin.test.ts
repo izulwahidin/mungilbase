@@ -99,7 +99,7 @@ describe('admin panel', () => {
 
     const loginPage = await app.request('/admin/login')
     expect(loginPage.status).toBe(200)
-    expect(await loginPage.text()).toContain('Admin login')
+    expect(await loginPage.text()).toContain('Sign in')
     expect(cookieValue(loginPage, 'mungil_csrf')).toHaveLength(43)
   })
 
@@ -137,7 +137,13 @@ describe('admin panel', () => {
 
     const edit = await app.request(`/admin/tables/posts/${row.id}`, { headers: { cookie } })
     expect(edit.status).toBe(200)
-    expect(await edit.text()).toContain('From the panel')
+    const editHtml = await edit.text()
+    expect(editHtml).toContain('From the panel')
+    // The delete form must be a sibling of the edit form. Nested forms are
+    // invalid HTML; browsers drop the inner one, so Delete submits Save.
+    const pageBody = editHtml.slice(editHtml.indexOf('<main'))
+    expect(pageBody.match(/<form /g)).toHaveLength(2)
+    expect(pageBody).toMatch(/<\/form>(?:(?!<form )[\s\S])*<form [^>]*\/delete/)
 
     const updated = await form(
       `/admin/tables/posts/${row.id}`,

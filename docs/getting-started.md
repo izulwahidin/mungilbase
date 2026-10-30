@@ -80,9 +80,14 @@ regenerates `openapi.json` and the SDK on every change.
 
 ## 4. Create an account
 
-The starter config has `auth.allowSignup: true`, so you can register over
-HTTP. To create an account without opening signup — or to make an admin — use
-the CLI:
+The first administrator is created in the browser: open
+<http://localhost:8787/admin>. A deployment with no `admin` account shows the
+setup screen once, and closes it as soon as the account exists. Everything after
+that — rows, the schema, settings — is in the same panel.
+
+The starter config has `auth.allowSignup: true`, so you can also register over
+HTTP. To create an account without opening signup — or to add another admin —
+use the CLI:
 
 ```bash
 MUNGIL_USER_PASSWORD='correct horse battery' npx mungilbase user create me@example.com

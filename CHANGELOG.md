@@ -4,6 +4,44 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **Browser first-run setup.** A deployment with no `admin` account serves
+  `/admin/setup`, which creates the first administrator (verified, audited as
+  `auth.admin_setup`) and signs them in. The screen closes as soon as an admin
+  exists, and two racing submissions leave exactly one account.
+- **Schema editor.** `/admin/schema` creates, edits and removes tables from the
+  browser: fields and types, required/unique/default values, file limits and
+  references, the five rules, timestamps and extra indexes. A save validates the
+  config, compiles every rule, applies the additive DDL, rewrites the config
+  file atomically with a `.bak` backup, then swaps the live registry, so new REST
+  routes work without a restart. Audited as `admin.schema_update`.
+  `createApp()` without `configPath` gets a read-only editor.
+- **New admin UI.** PocketBase-style shell with sidebar navigation, dashboard
+  cards, empty states, form validation messages, light/dark theme, responsive
+  layout, and external `/admin/assets/app.css` and `app.js` (no build step).
+- **Settings page** showing the effective config (read-only): app, auth,
+  storage, MCP defaults, config file and version.
+- `AuthService.hasAdminAccount()` / `countAdmins()`.
+- `loadConfigFile()` returns the file path and the un-defaulted contents;
+  `src/config/write.ts` renders a config back to `.ts`/`.js`/`.cjs`/`.json` and
+  writes it atomically.
+- `Registry.replace()` swaps a validated schema in place.
+
+### Changed
+
+- Admin pages are sent with `cache-control: no-store`, and the delete
+  confirmation no longer relies on an inline event handler.
+
+## [0.7.1] — 2026-10-30
+
+### Fixed
+
+- Admin panel: the Delete form was nested inside the edit form. Nested `<form>`
+  elements are invalid HTML, so browsers dropped the inner form and **Delete**
+  submitted the edit/update action instead of deleting the row. The delete form
+  is now a sibling of the edit form, and the admin tests assert the structure.
+
 ## [0.7.0] — 2026-10-30
 
 ### Added

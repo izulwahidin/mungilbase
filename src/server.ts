@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { serve } from '@hono/node-server'
-import { loadConfig } from './config/load.js'
+import { loadConfigFile } from './config/load.js'
 import { openDatabase } from './db/connect.js'
 import { applyMigrations } from './db/migrator.js'
 import { migrations } from './db/migrations.js'
@@ -47,7 +47,8 @@ export interface RunningServer {
  */
 export async function startServer(options: StartServerOptions = {}): Promise<RunningServer> {
   const version = options.version ?? VERSION
-  const config = await loadConfig(options.configPath)
+  const loaded = await loadConfigFile(options.configPath)
+  const config = loaded.config
   const dbFile = process.env.MUNGIL_DB_FILE ?? config.database.file
   const host = options.host ?? process.env.HOST ?? config.server.host
   const port = options.port ?? Number(process.env.PORT ?? config.server.port)
@@ -88,6 +89,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
       version,
       registry,
       reportError,
+      configPath: loaded.path,
     })
 
     if (options.handleSignals !== false) installProcessHandlers(reportError)

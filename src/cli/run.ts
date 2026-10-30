@@ -228,17 +228,18 @@ async function dispatch(
         io.log('')
       }
       io.log('Next:')
-      if (!result.demo) {
-        io.log('  mungilbase migrate')
-        io.log('  MUNGIL_USER_PASSWORD=... mungilbase user create you@example.com')
-      }
+      if (!result.demo) io.log('  mungilbase migrate')
       io.log('  mungilbase start')
       io.log('')
       io.log('Frontend  http://localhost:8787')
       io.log('API       http://localhost:8787/api/v1')
-      io.log('Admin     http://localhost:8787/admin')
+      io.log('Admin     http://localhost:8787/admin  (first run creates the administrator)')
       io.log('MCP       mungilbase mcp --check')
       io.log('          mungilbase mcp --print-config opencode')
+      if (!result.demo) {
+        io.log('')
+        io.log('No browser? MUNGIL_USER_PASSWORD=... mungilbase user create you@example.com --role admin')
+      }
       return
     }
     case 'migrate':

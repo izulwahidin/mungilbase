@@ -655,6 +655,40 @@ export class AuthService {
   }
 
   /**
+   * Whether the deployment has ever had an administrator.
+   *
+   * Drives the first-run setup screen: while this is false, `/admin/setup`
+   * lets the operator create the first admin account from the browser. It
+   * closes as soon as one admin exists, and reopens only if every admin is
+   * deleted again (accounts can only be removed by an operator).
+   */
+  hasAdminAccount(): boolean {
+    return this.countAdmins() > 0
+  }
+
+  /** Number of accounts with the `admin` role. */
+  countAdmins(): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS "n" FROM "${AUTH_TABLES.users}" WHERE "role" = 'admin'`)
+      .get() as { n: number }
+    return row.n
+  }
+
+  /**
+   * Oldest administrator by creation order. Used to settle a race between two
+   * first-run setups: both may create an account, and only this one survives.
+   */
+  firstAdminId(): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT "id" FROM "${AUTH_TABLES.users}" WHERE "role" = 'admin'
+         ORDER BY "created_at" ASC, "id" ASC LIMIT 1`,
+      )
+      .get() as { id: string } | undefined
+    return row?.id ?? null
+  }
+
+  /**
    * Paginated account list for operator surfaces. Never includes password
    * hashes or session tokens.
    */
