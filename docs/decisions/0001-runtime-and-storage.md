@@ -7,8 +7,9 @@
 
 ## Decision
 
-Target **Node 22 + SQLite (better-sqlite3, WAL) + Hono**, packaged as a single
-Docker image. One process per deployment. Litestream for continuous backup.
+Target **Node 22 + SQLite (better-sqlite3, WAL) + Hono**, published as an npm
+package with an `npx` CLI. One process per deployment. Litestream is optional
+for continuous backup.
 
 ## Why
 

@@ -5,7 +5,7 @@ SQLite file, one operator.
 
 **Assumptions**
 
-- One process per database file. Do not run two containers against the same
+- One process per database file. Do not run two processes against the same
   file, especially on a network filesystem.
 - The host's disk is encrypted if the data is sensitive. MungilBase does not
   encrypt the database file itself.
@@ -60,9 +60,9 @@ Two mechanisms, use at least one:
 ### Snapshot CLI (built in)
 
 ```bash
-npm run backup -- /var/backups/mungilbase          # timestamped file in the dir
-npm run backup -- /var/backups/mungilbase/x.db     # exact path
-npm run backup -- /var/backups/mungilbase /srv/mungilbase/mungil.config.json
+npx mungilbase backup /var/backups/mungilbase          # timestamped file in the dir
+npx mungilbase backup /var/backups/mungilbase/x.db     # exact path
+npx mungilbase backup /var/backups/mungilbase --config /srv/mungilbase/mungil.config.json
 ```
 
 This uses SQLite's online backup API and verifies `PRAGMA integrity_check`
@@ -71,7 +71,7 @@ and `PRAGMA foreign_key_check` immediately. It is safe while the server runs.
 Cron example (every 30 minutes):
 
 ```cron
-*/30 * * * * cd /srv/mungilbase && npm run backup -- /var/backups/mungilbase >> /var/log/mungilbase-backup.log 2>&1
+*/30 * * * * cd /srv/mungilbase && npx mungilbase backup /var/backups/mungilbase >> /var/log/mungilbase-backup.log 2>&1
 ```
 
 Copy snapshots off the host. A backup on the same disk is a RAID, not a backup.
@@ -79,19 +79,21 @@ Copy snapshots off the host. A backup on the same disk is a RAID, not a backup.
 Retention: delete old snapshots on a schedule you can defend (e.g. 48 hourly,
 14 daily, 8 weekly). Nothing prunes them automatically.
 
-### Litestream (continuous)
+### Litestream (optional, continuous)
 
-`litestream.yml` and the `backup` profile in `docker-compose.yml` replicate the
-WAL to S3-compatible storage. Restore:
+Install [Litestream](https://litestream.io) separately on the host and point it
+at the SQLite file, for example:
 
 ```bash
-docker compose run --rm litestream restore \
-  -config /etc/litestream.yml \
-  -o /data/restored.db /data/mungil.db
+litestream replicate /srv/mungilbase/data/mungil.db s3://my-bucket/mungilbase
 ```
 
 Restore to a new file, verify it, then swap. Never restore over the live file
-while the app is running.
+while the app is running:
+
+```bash
+litestream restore -o /srv/mungilbase/data/restored.db s3://my-bucket/mungilbase
+```
 
 ### Verify the mechanism itself
 
@@ -108,7 +110,7 @@ anything under `src/db`, this must stay green.
 
 ## Restore procedure (snapshot)
 
-1. **Stop the app.** `systemctl stop mungilbase` or `docker compose stop`.
+1. **Stop the app.** `systemctl stop mungilbase`.
 2. **Keep the current file.** `mv /data/mungil.db /data/mungil.db.broken-$(date +%s)`
    (and move `-wal`/`-shm` if present).
 3. **Verify the snapshot before using it:**
@@ -125,7 +127,7 @@ anything under `src/db`, this must stay green.
 
    `integrity_check` must print `ok` and `foreign_key_check` must print `[]`.
 4. **Copy it into place** and fix ownership to the app user.
-5. **Run migrations/schema sync:** `npm run migrate -- ./mungil.config.json`
+5. **Run migrations/schema sync:** `npx mungilbase migrate --config ./mungil.config.json`
    (or let boot do it).
 6. **Start the app**, then verify:
    - `GET /health` → 200
@@ -141,16 +143,18 @@ Do not "repair" a production database with `PRAGMA writable_schema`.
 
 ## Upgrades
 
-1. Snapshot first: `npm run backup -- /var/backups/mungilbase`.
-2. Pull the release, `npm ci`, `npm run build`.
-3. `npm run migrate -- ./mungil.config.json` (checksummed migrations + additive
-   schema sync). Anything destructive fails here, before the app starts.
+1. Snapshot first: `npx mungilbase backup /var/backups/mungilbase`.
+2. Install the release: `npm install --global mungilbase@<version>` (or pull the
+   tag and run `npm ci && npm run build` from a source checkout).
+3. `npx mungilbase migrate --config ./mungil.config.json` (checksummed
+   migrations + additive schema sync). Anything destructive fails here, before
+   the app starts.
 4. Restart, then run the same smoke checks as a restore.
-5. Keep the previous image tag until the next successful backup.
+5. Keep the previous package version until the next successful backup.
 
 Rollback:
 
-- **Code only:** redeploy the previous image tag. Migrations are forward-only.
+- **Code only:** reinstall the previous package version. Migrations are forward-only.
 - **Schema changed destructively:** you cannot roll back code safely. Restore
   the pre-upgrade snapshot instead, which discards writes after the snapshot.
 
@@ -176,7 +180,7 @@ planned restore path.
 2. The built-in throttle already blocks 5 failures/15 min per account and
    30/10 min per IP (defaults). For a sustained attack, block the source at the
    reverse proxy.
-3. If an account is compromised: `npm run user:passwd -- user@example.com`
+3. If an account is compromised: `npx mungilbase user passwd user@example.com`
    (with `MUNGIL_USER_PASSWORD` set). This changes the password **and revokes
    every session for that account** in one transaction.
 
@@ -199,7 +203,7 @@ IP by default.
 If email is not configured, or mail delivery is broken, the operator path is:
 
 ```bash
-MUNGIL_USER_PASSWORD='new long password' npm run user:passwd -- user@example.com
+MUNGIL_USER_PASSWORD='new long password' npx mungilbase user passwd user@example.com
 ```
 
 SMTP settings live in `email`; the password comes from the environment variable
@@ -214,7 +218,7 @@ link; `required: true` rejects logins with `403 email_not_verified` until the
 address is confirmed. Tokens are hashed, single-use and expire after 24 hours.
 `resend-verification` requires a session and is throttled.
 
-Accounts created with `npm run user:create` are verified by default. To audit
+Accounts created with `mungilbase user create` are verified by default. To audit
 unverified accounts:
 
 ```sql
@@ -281,7 +285,7 @@ application itself never does it.
 
 Uploaded files live outside SQLite: `storage.local.dir` (default
 `./data/files`) or an S3-compatible bucket. They are **not** included in
-`npm run backup` or Litestream.
+`mungilbase backup` or Litestream.
 
 - Local disk: back the directory up separately (filesystem snapshot or
   `rsync`). If you need DB and files consistent, pause writes, snapshot the DB,
@@ -293,8 +297,8 @@ Uploaded files live outside SQLite: `storage.local.dir` (default
   Keys are `<table>/<id-hash>/<field>/<uuid>.<ext>`.
 
   ```bash
-  npm run files:gc                 # dry run, reports counts
-  npm run files:gc -- --apply      # delete unreferenced objects
+  npx mungilbase files gc                 # dry run, reports counts
+  npx mungilbase files gc --apply         # delete unreferenced objects
   ```
 
   Run the dry run after any incident involving uploads, then apply.
@@ -304,8 +308,6 @@ Uploaded files live outside SQLite: `storage.local.dir` (default
 - Responses are served inline with a sandboxing CSP and `nosniff`, so an SVG
   upload cannot run script on the API origin.
 - Disk/bucket usage is not in `/metrics`; monitor it with the system tooling.
-
-## Load shedding and capacity
 
 ## Load shedding and capacity
 
@@ -357,7 +359,7 @@ BASE_URL=http://127.0.0.1:8787 RATE=200 DURATION=60s k6 run scripts/loadtest.k6.
 
 Indexes created automatically: `id` (primary key), unique fields, foreign-key
 columns, and `created_at` for default ordering. If a filter is hot, add it to
-the table's `indexes` config and rerun `npm run migrate`; composite indexes are
+the table's `indexes` config and rerun `npx mungilbase migrate`; composite indexes are
 written as arrays. Removing an index from the config is refused at startup
 (like removing a column), so dropping one requires an explicit migration.
 
@@ -366,8 +368,8 @@ written as arrays. Removing an index from the config is refused at startup
 ## Roles
 
 ```bash
-npm run user:role -- user@example.com admin
-npm run user:role -- user@example.com user
+npx mungilbase user role user@example.com admin
+npx mungilbase user role user@example.com user
 ```
 
 The change is effective on the next request; existing tokens pick up the new

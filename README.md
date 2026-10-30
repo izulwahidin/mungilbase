@@ -3,8 +3,9 @@
 **mungil** *(Indonesian)* — tiny, small.
 
 A small, self-hosted backend defined by one typed config file: REST endpoints,
-authentication, row-level rules, and migrations. Runs as a single Node process
-with SQLite.
+authentication, row-level rules, migrations, and an MCP server for AI agents.
+Ships as an npm package and a typed library; runs as a single Node process with
+SQLite.
 
 > **Status: v0.5.0 (pre-1.0).** Feature-complete for a single-node self-hosted
 > deployment, but it has not been through an external security audit or a
@@ -18,19 +19,22 @@ a hosted platform, a VPS and an admin UI, or a serverless database with
 transactional gaps. MungilBase is deliberately the boring option:
 
 - **One process, one file.** Node + SQLite in WAL mode. Your data is a file you
-  can copy, and `docker compose up` is the whole deploy.
+  can copy, and `npx mungilbase start` is the whole deploy.
 - **Real transactions.** Sessions, rule-checked writes, and migrations run
   inside SQLite transactions, not eventually-consistent stores.
 - **Rules are SQL.** Access rules compile to parameterized `WHERE` clauses and
   execute inside the database, so unauthorized rows never leave it.
 - **Deny by default.** Every table must declare all five rules; `null` is
   deny, `'true'` is allow, and there is no implicit "open" state.
+- **Agents get the same rules.** The optional MCP server reuses the HTTP CRUD
+  functions, so an AI agent cannot bypass a rule by taking a different path.
 
 ## Install
 
 Requires Node.js 22 or newer.
 
 ```bash
+# or pin it: npm install --save-dev mungilbase
 npx mungilbase init      # mungil.config.ts, .env.example, .gitignore
 npx mungilbase migrate   # apply migrations + additively sync the schema
 npx mungilbase start
@@ -58,6 +62,18 @@ npx mungilbase mcp                    # MCP tools for AI agents (stdio)
 
 See [docs/cli.md](docs/cli.md) for the full command reference and
 [docs/getting-started.md](docs/getting-started.md) for a guided first project.
+
+### Use as a library
+
+```ts
+import { loadConfig, startServer, generateSdk, openMcpContext } from 'mungilbase'
+import type { MungilConfigInput } from 'mungilbase/config'
+```
+
+The package exports the config schema and loader, server boot, OpenAPI builder,
+SDK generator, and MCP server. Importing `mungilbase` never opens a database or
+starts a listener. See
+[Using it as a library](docs/cli.md#using-it-as-a-library).
 
 ### From source
 
@@ -227,7 +243,8 @@ session for the account.
 Email verification is off by default. Set `auth.emailVerification.enabled` to
 send a link on registration, and `required: true` to reject logins until the
 address is verified. Resending needs a session and is throttled. Accounts
-created with `mungilbase user create` start verified, since the operator vouched for them.
+created with `mungilbase user create` start verified, since the operator
+vouched for them.
 
 Users have a closed role: `user` or `admin`. Promotion alone does **not**
 bypass table rules; set `auth.adminBypassRules: true` if admins should see and
@@ -368,8 +385,8 @@ export default {
 }
 ```
 
-JSON configs are supported for production containers that cannot run a build
-step: see `mungil.config.example.json`.
+JSON configs are supported for deployments that cannot run a TypeScript
+loader: see `mungil.config.example.json`.
 
 ## Rule language
 
@@ -414,7 +431,7 @@ anonymous requests rather than an empty result.
 - [x] File uploads to local or S3-compatible storage, with size/MIME limits,
       rule checks, automatic cleanup on replace/delete, and `files:gc`
 - [x] OpenAPI 3.1 generated from the config at `/api/v1/openapi.json`
-- [x] TypeScript SDK generated from the config (`npm run sdk`)
+- [x] TypeScript SDK generated from the config (`npx mungilbase sdk`)
 - [x] Append-only audit log for denials, throttling, 401s, 5xx, auth and admin events
 - [x] Prometheus `/metrics`, load shedding, optional Sentry-compatible reporting
 - [x] Verified online backups + automated restore drill (runs in CI)
@@ -422,7 +439,7 @@ anonymous requests rather than an empty result.
       `sdk`, `backup`, `files gc`, `mcp`, user management) and a typed library export
 - [x] MCP server for AI agents (stdio), rules-enforced, read-only by default,
       with optional identity, table allowlist and write tools
-- [x] Docker image, compose file, CI workflow, npm release, threat model, runbook
+- [x] GitHub Actions CI, npm release workflow, threat model, runbook
 
 ## Not built yet
 
@@ -452,7 +469,7 @@ Every code-level requirement is met as of **v0.5.0**:
 These are operational or third-party tasks, not code:
 
 - [ ] External penetration test.
-- [ ] A tested Litestream restore on the target host (the Docker path).
+- [ ] A tested restore on the target host (snapshot or Litestream).
 - [ ] An on-call/support commitment for the deployment.
 - [ ] SMTP deliverability verified with the real provider (bounces, complaints).
 
@@ -465,20 +482,42 @@ See [docs/getting-started.md](docs/getting-started.md),
 ## Deploy (single node)
 
 ```bash
-cp mungil.config.example.json mungil.config.json
-docker compose up -d --build
+mkdir -p /srv/mungilbase && cd /srv/mungilbase
+npm install --global mungilbase
+mungilbase init
+mungilbase doctor
+mungilbase migrate
+mungilbase start
 ```
 
-Pushing a `v*` tag publishes `ghcr.io/<owner>/mungilbase:<tag>` via
-`.github/workflows/release.yml` and, when `NPM_TOKEN` is set, publishes the
-package to npm. A bare-metal host can run the same build with
-`npx mungilbase start`; keep the process under systemd or another process
-manager.
+Run it under a process manager. Example systemd unit:
 
-SQLite lives in `./data` on the host. Schedule `npx mungilbase backup /backups`
-and read [docs/runbook.md](docs/runbook.md); for continuous replication use the
-Litestream block in `docker-compose.yml`. Before trusting any backup, run
+```ini
+[Unit]
+Description=MungilBase
+After=network.target
+
+[Service]
+Type=simple
+User=mungil
+WorkingDirectory=/srv/mungilbase
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/mungilbase start
+Restart=on-failure
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Put a reverse proxy (Caddy, nginx) in front for TLS, and set `appUrl` plus
+`allowedOrigins` to the public origin. SQLite lives in `./data` on the host;
+schedule `mungilbase backup /backups` and read
+[docs/runbook.md](docs/runbook.md). Before trusting any backup, run
 `npm run drill` from a source checkout.
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which publishes the
+package to npm when `NPM_TOKEN` is set.
 
 ## License
 

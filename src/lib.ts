@@ -1,7 +1,7 @@
 /**
  * Public library surface for `mungilbase`.
  *
- * The CLI and the Docker entrypoint are separate: importing this module never
+ * The CLI and the server entrypoint are separate: importing this module never
  * opens a database or starts a listener.
  */
 export {

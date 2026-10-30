@@ -4,6 +4,14 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+### Removed
+
+- Docker deployment artifacts (`Dockerfile`, `docker-compose.yml`,
+  `.dockerignore`, `litestream.yml`) and the GHCR image jobs. The supported
+  deployment is the npm package / `npx mungilbase` process under a process
+  manager; Litestream is documented as an optional external backup tool.
+
+
 ## [0.5.0] — 2026-10-30
 
 ### Added

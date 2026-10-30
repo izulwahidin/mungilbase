@@ -24,7 +24,7 @@ export interface StartServerOptions {
   version?: string
   /**
    * Install SIGINT/SIGTERM/uncaught-exception handlers and exit the process
-   * on shutdown. Enabled for the CLI and the Docker entrypoint; disable when
+   * on shutdown. Enabled for the CLI and `npm start`; disable when
    * embedding the server in another process.
    */
   handleSignals?: boolean
