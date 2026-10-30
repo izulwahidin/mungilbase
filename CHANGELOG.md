@@ -4,6 +4,8 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-30
+
 ### Added
 
 - `static: { dir, spa, cacheControl }` config: serve a frontend from the same

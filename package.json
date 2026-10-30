@@ -1,6 +1,6 @@
 {
   "name": "mungilbase",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A small, self-hosted backend defined by a typed config file: REST, auth, row-level rules, migrations.",
   "type": "module",
   "license": "Apache-2.0",
