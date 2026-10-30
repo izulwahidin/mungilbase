@@ -20,6 +20,10 @@ export interface McpCommandOptions {
   user?: string
   /** Register create/update/delete tools. */
   allowWrite?: boolean
+  /** Register operator tools. Requires --user with the admin role. */
+  admin?: boolean
+  /** Register query_sql/execute_sql. Requires admin mode. */
+  allowRawSql?: boolean
   /** Restrict the exposed tables. */
   tables?: readonly string[]
   version?: string
@@ -55,14 +59,20 @@ export async function openMcpContext(options: McpCommandOptions = {}): Promise<M
     ensureAuditSchema(db)
 
     const identity = options.user ? await resolveIdentity(db, config, options.user) : null
-    const admin =
-      identity?.role === 'admin' && (config.auth?.adminBypassRules ?? false)
+    if (options.admin && (!identity || identity.role !== 'admin')) {
+      throw new Error('--admin requires --user with an account whose role is admin.')
+    }
+    if (options.allowRawSql && !options.admin) {
+      throw new Error('--allow-raw-sql requires --admin.')
+    }
+
+    const bypass = identity?.role === 'admin' && (config.auth?.adminBypassRules ?? false)
     const auth: AuthContext = identity
       ? {
           uid: identity.id,
           role: identity.role,
           verified: identity.emailVerified,
-          admin,
+          admin: bypass,
         }
       : anonymous
 
@@ -73,7 +83,11 @@ export async function openMcpContext(options: McpCommandOptions = {}): Promise<M
       identity,
       auth,
       allowWrite: options.allowWrite ?? false,
+      allowAdmin: options.admin ?? false,
+      allowRawSql: options.allowRawSql ?? false,
       tables: options.tables,
+      configPath,
+      dbFile,
       version: options.version ?? VERSION,
     })
 
@@ -118,6 +132,8 @@ export async function runMcpServer(options: McpCommandOptions = {}): Promise<voi
     transport: 'stdio',
     identity: context.identity?.email ?? null,
     write: options.allowWrite ?? false,
+    admin: options.admin ?? false,
+    rawSql: options.allowRawSql ?? false,
     tables: [...context.registry.tables.keys()],
     database: context.dbFile,
     version: options.version ?? VERSION,

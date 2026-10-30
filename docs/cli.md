@@ -66,6 +66,8 @@ Aliases kept for existing scripts: `serve`, `check`, `files-gc`,
 | `--user <email>` | `mcp`: evaluate rules as this account (default anonymous). |
 | `--tables <a,b>` | `mcp`: expose only these tables. |
 | `--allow-write` | `mcp`: register create/update/delete tools. |
+| `--admin` | `mcp`: register schema, user, backup and audit tools. Requires `--user` with the `admin` role. |
+| `--allow-raw-sql` | `mcp`: expose `query_sql` and `execute_sql`. Requires `--admin`. |
 | `-h, --help` | Show help. |
 | `-v, --version` | Print the version. |
 
@@ -140,6 +142,8 @@ or table; a destructive diff is an error that tells you to write a migration.
 mungilbase mcp
 mungilbase mcp --user agent@example.com --tables notes,posts
 mungilbase mcp --user agent@example.com --allow-write
+mungilbase mcp --user admin@example.com --admin
+mungilbase mcp --user admin@example.com --admin --allow-raw-sql
 ```
 
 Starts a Model Context Protocol server over stdio for AI agents. The server is
@@ -147,9 +151,15 @@ anonymous and read-only by default. `--user` selects an existing account (the
 same table rules apply); `--allow-write` registers `create_row`, `update_row`
 and `delete_row`; `--tables` narrows the exposed surface.
 
-The MCP surface reuses the HTTP CRUD functions: no raw SQL, no config changes,
-no user management, no file uploads. stdout is reserved for the protocol, so
-all diagnostics go to stderr.
+`--admin` requires an account whose role is `admin` and registers operator
+tools: `migrate`, `list_migrations`, user management, backups, audit reads and
+`generate_sdk`. `--allow-raw-sql` additionally exposes `query_sql` (read-only)
+and `execute_sql` (arbitrary SQL). Both bypass table rules by design and are
+audited.
+
+Data tools reuse the HTTP CRUD functions. File uploads and config-file editing
+are not exposed. stdout is reserved for the protocol, so all diagnostics go to
+stderr.
 
 See [MCP for AI agents](mcp.md) for client configuration and the security
 model.
@@ -272,7 +282,7 @@ import type { MungilConfigInput } from 'mungilbase/config'
 
 const config = await loadConfig('./mungil.config.ts')
 const sdk = generateSdk(config)
-const spec = buildOpenApi(config, '0.5.0')
+const spec = buildOpenApi(config, '0.6.0')
 
 const server = await startServer({ configPath: './mungil.config.ts', handleSignals: false })
 await server.close()

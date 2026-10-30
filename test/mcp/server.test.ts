@@ -5,10 +5,19 @@ import { configSchema, type MungilConfig } from '../../src/config/schema.js'
 import { openDatabase, type Db } from '../../src/db/connect.js'
 import { ensureSchema } from '../../src/db/ddl.js'
 import { ensureAuditSchema } from '../../src/audit/log.js'
+import { ensureAuthSchema } from '../../src/auth/schema.js'
 import { createRegistry, type Registry } from '../../src/tables/registry.js'
 import { createMcpServer, type CreateMcpServerOptions } from '../../src/mcp/server.js'
 
 const denials = { list: null, view: null, create: null, update: null, delete: null }
+
+const adminIdentity = {
+  id: 'admin1',
+  email: 'admin@example.com',
+  role: 'admin' as const,
+  emailVerified: true,
+}
+const adminAuth = { uid: 'admin1', role: 'admin' as const, verified: true, admin: false }
 
 const config: MungilConfig = configSchema.parse({
   tables: [
@@ -46,6 +55,7 @@ async function harness(patch: Partial<CreateMcpServerOptions> = {}): Promise<Har
   const db = openDatabase(':memory:')
   const registry = createRegistry(config)
   ensureSchema(db, registry)
+  ensureAuthSchema(db)
   ensureAuditSchema(db)
 
   db.prepare(`INSERT INTO "users" ("id", "email") VALUES (?, ?)`).run('u1', 'a@example.com')
@@ -212,6 +222,140 @@ describe('MCP server', () => {
       arguments: { table: 'users' },
     })
     expect(denied.isError).toBe(true)
+  })
+
+  it('requires an admin identity to enable admin tools', async () => {
+    const db = openDatabase(':memory:')
+    const registry = createRegistry(config)
+    try {
+      expect(() =>
+        createMcpServer({
+          config,
+          registry,
+          db,
+          auth: { uid: 'u1', role: 'user', verified: true },
+          identity: { id: 'u1', email: 'a@example.com', role: 'user', emailVerified: true },
+          allowAdmin: true,
+        }),
+      ).toThrow(/admin role/)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('manages users, schema and audit in admin mode', async () => {
+    current = await harness({ identity: adminIdentity, auth: adminAuth, allowAdmin: true })
+    const tools = await current.client.listTools()
+    const names = tools.tools.map((tool) => tool.name)
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'get_config',
+        'database_info',
+        'list_migrations',
+        'migrate',
+        'list_users',
+        'create_user',
+        'set_user_role',
+        'reset_user_password',
+        'delete_user',
+        'list_audit',
+        'backup_database',
+        'files_gc',
+        'generate_sdk',
+      ]),
+    )
+    expect(names).not.toContain('query_sql')
+
+    const created = parse(
+      await current.client.callTool({
+        name: 'create_user',
+        arguments: { email: 'new@example.com', role: 'admin' },
+      }),
+    )
+    expect(created.generatedPassword).toBeTypeOf('string')
+    expect(created.user).toMatchObject({ email: 'new@example.com', role: 'admin' })
+
+    const users = parse(await current.client.callTool({ name: 'list_users', arguments: {} }))
+    expect(users.total).toBe(1)
+
+    parse(
+      await current.client.callTool({
+        name: 'set_user_role',
+        arguments: { email: 'new@example.com', role: 'user' },
+      }),
+    )
+    const afterRole = parse(
+      await current.client.callTool({
+        name: 'list_users',
+        arguments: {},
+      }),
+    )
+    expect((afterRole.users as Array<{ role: string }>)[0]?.role).toBe('user')
+
+    const migration = parse(await current.client.callTool({ name: 'migrate', arguments: {} }))
+    expect(migration).toMatchObject({ applied: [] })
+
+    const audit = parse(
+      await current.client.callTool({
+        name: 'list_audit',
+        arguments: { event: 'mcp.admin.create_user' },
+      }),
+    )
+    expect(audit.count).toBe(1)
+
+    parse(
+      await current.client.callTool({
+        name: 'delete_user',
+        arguments: { email: 'new@example.com' },
+      }),
+    )
+    const remaining = parse(await current.client.callTool({ name: 'list_users', arguments: {} }))
+    expect(remaining.total).toBe(0)
+  })
+
+  it('exposes raw SQL only with allowRawSql, and enforces read-only queries', async () => {
+    current = await harness({
+      identity: adminIdentity,
+      auth: adminAuth,
+      allowAdmin: true,
+      allowRawSql: true,
+    })
+    const tools = await current.client.listTools()
+    expect(tools.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['query_sql', 'execute_sql']),
+    )
+
+    const read = parse(
+      await current.client.callTool({
+        name: 'query_sql',
+        arguments: { sql: 'SELECT COUNT(*) AS n FROM posts' },
+      }),
+    )
+    expect(read.rows).toEqual([{ n: 3 }])
+
+    const rejected = await current.client.callTool({
+      name: 'query_sql',
+      arguments: { sql: "INSERT INTO posts (id, author_id, title) VALUES ('p4', 'u1', 'nope')" },
+    })
+    expect(rejected.isError).toBe(true)
+
+    const executed = parse(
+      await current.client.callTool({
+        name: 'execute_sql',
+        arguments: {
+          sql: "INSERT INTO posts (id, author_id, title) VALUES ('p4', 'u1', 'From SQL')",
+        },
+      }),
+    )
+    expect(executed.changes).toBe(1)
+
+    const check = parse(
+      await current.client.callTool({
+        name: 'query_sql',
+        arguments: { sql: "SELECT title FROM posts WHERE id = 'p4'" },
+      }),
+    )
+    expect(check.rows).toEqual([{ title: 'From SQL' }])
   })
 
   it('serves schema and OpenAPI resources', async () => {

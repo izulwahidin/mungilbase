@@ -4,6 +4,26 @@ All notable changes to MungilBase. Versions follow [SemVer](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-30
+
+### Added
+
+- Supabase-style MCP admin mode: `npx mungilbase mcp --user admin@example.com --admin`.
+  Tools include `get_config`, `database_info`, `list_migrations`, `migrate`,
+  `list_users`, `create_user`, `set_user_role`, `reset_user_password`,
+  `delete_user`, `list_audit`, `backup_database`, `files_gc` and `generate_sdk`.
+- `--allow-raw-sql` adds `query_sql` (read-only, row-capped) and `execute_sql`
+  (arbitrary SQL). It requires `--admin` and an account with the admin role.
+- Admin and raw-SQL calls are written to the audit log as `mcp.admin.*` events.
+- Generated passwords for `create_user` / `reset_user_password` are returned
+  once when the caller omits a password.
+
+### Changed
+
+- `whoami` reports whether admin mode and raw SQL are enabled.
+- `AuthService` gained `listUsers` and `deleteUser` for operator surfaces.
+
+
 ### Removed
 
 - Docker deployment artifacts (`Dockerfile`, `docker-compose.yml`,

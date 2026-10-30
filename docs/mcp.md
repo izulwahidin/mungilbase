@@ -2,8 +2,8 @@
 
 MungilBase ships a [Model Context Protocol](https://modelcontextprotocol.io)
 server. It exposes your configured tables as tools over stdio, so Claude
-Desktop, Cursor, Codex, and other MCP clients can read and (optionally) write
-data.
+Desktop, Cursor, Codex, and other MCP clients can read data, write data,
+manage accounts, run migrations, and (with a second opt-in) execute SQL.
 
 The important part: **MCP uses the same CRUD functions, validation and
 row-level rules as the HTTP API.** There is no second query path and no way for
@@ -35,6 +35,8 @@ npx mungilbase mcp \
 | `--user <email>` | Evaluate every tool call as this account. Omit for anonymous. |
 | `--tables a,b` | Expose only these tables. Omit for every configured table. |
 | `--allow-write` | Register `create_row`, `update_row` and `delete_row`. |
+| `--admin` | Register operator tools (schema, users, backups, audit). Requires `--user` with the `admin` role. |
+| `--allow-raw-sql` | Register `query_sql` and `execute_sql`. Requires `--admin`. |
 | `--config <path>` | Config file (otherwise `MUNGIL_CONFIG` or `mungil.config.*`). |
 
 The account must already exist:
@@ -46,6 +48,35 @@ MUNGIL_USER_PASSWORD='correct horse battery' npx mungilbase user create agent@ex
 Email verification is honored when `auth.emailVerification.required` is true.
 Admin bypass is also honored, but only when `auth.adminBypassRules` is enabled;
 `--user` alone never becomes a bypass.
+
+## Admin mode
+
+Admin tools are opt-in twice: the operator passes `--admin`, **and** the
+selected account must already have the `admin` role. There is no path for an
+agent to promote itself.
+
+```bash
+# bootstrap the first admin with the CLI
+MUNGIL_USER_PASSWORD='correct horse battery' npx mungilbase user create admin@example.com --role admin
+
+# then expose admin tools, data writes, and raw SQL
+npx mungilbase mcp \
+  --user admin@example.com \
+  --admin \
+  --allow-write \
+  --allow-raw-sql
+```
+
+`--allow-raw-sql` requires `--admin` and adds two tools that bypass table
+rules entirely:
+
+- `query_sql` — one read-only statement with SQLite `query_only` enabled and a
+  row cap (default 200, max 1000). Writes are rejected.
+- `execute_sql` — arbitrary SQL, including writes and DDL. Every call is
+  audited, including failures.
+
+Use admin mode on a trusted workstation against a trusted database. Prefer the
+CLI for production changes when you do not need an agent in the loop.
 
 ## Tools
 
@@ -67,6 +98,31 @@ Registered only with `--allow-write`:
 | `create_row` | Insert a row; the create rule runs inside SQLite |
 | `update_row` | Patch a row; only provided fields change |
 | `delete_row` | Delete a row and its referenced files |
+
+Registered only with `--admin` (requires an admin identity):
+
+| Tool | What it does |
+|---|---|
+| `get_config` | Validated config and its path |
+| `database_info` | SQLite version, journal mode, page counts and sizes |
+| `list_migrations` | Known migrations and which are applied |
+| `migrate` | Apply code migrations + additive schema sync |
+| `list_users` | Accounts, roles and verification status |
+| `create_user` | Create an account, optionally generating a password |
+| `set_user_role` | Change `user` / `admin` |
+| `reset_user_password` | Set a password and revoke all sessions |
+| `delete_user` | Delete an account and its sessions |
+| `list_audit` | Filter the audit log |
+| `backup_database` | Verified online SQLite backup |
+| `files_gc` | Find or delete unreferenced uploads |
+| `generate_sdk` | Write the typed TypeScript client |
+
+Registered only with `--admin --allow-raw-sql`:
+
+| Tool | What it does |
+|---|---|
+| `query_sql` | One read-only SQL statement, row-capped |
+| `execute_sql` | Arbitrary SQL, including writes and DDL |
 
 Resources:
 
@@ -163,14 +219,22 @@ from a missing row.
 - Anonymous by default. `--user` chooses a real account for rule evaluation.
 - Every rule is compiled and executed in SQLite, never in the agent process.
 - `--tables` narrows the surface; tools for other tables reject requests.
+- Admin tools require both `--admin` and an account whose role is `admin`.
+- Raw SQL requires `--admin --allow-raw-sql`; `query_sql` is read-only, while
+  `execute_sql` can bypass every rule and schema constraint.
 - MCP writes append `mcp.create`, `mcp.update` and `mcp.delete` rows to the
-  audit log, including denied attempts.
-- The agent cannot run raw SQL, change the config, upload files or manage users.
+  audit log. Admin and raw-SQL calls append `mcp.admin.*` rows, including
+  failures and denied writes.
+- Generated passwords are returned once in the tool result, so they appear in
+  the agent transcript. Pass an explicit password if that is not acceptable.
+- Files cannot be uploaded over MCP, and the config file cannot be edited by
+  a tool. Use the HTTP upload route or edit the config and run `migrate`.
 - MCP is an operator surface. Run it locally, with the same trust you give a
   shell that can open the database file.
 
 For a production read-only endpoint, run MCP on the same host as the database
-with a dedicated account and no `--allow-write`.
+with a dedicated account and no `--allow-write`, `--admin` or
+`--allow-raw-sql`.
 
 ## Programmatic use
 
@@ -178,7 +242,12 @@ with a dedicated account and no `--allow-write`.
 import { openMcpContext } from 'mungilbase'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
-const context = await openMcpContext({ configPath: './mungil.config.ts', user: 'agent@example.com' })
+const context = await openMcpContext({
+  configPath: './mungil.config.ts',
+  user: 'agent@example.com',
+  // admin: true,
+  // allowRawSql: true,
+})
 const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
 await context.server.connect(serverTransport)
 // hand clientTransport to an MCP client in the same process

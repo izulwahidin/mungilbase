@@ -24,6 +24,16 @@ export interface AuthUser {
   emailVerified: boolean
 }
 
+export interface AuthUserRecord extends AuthUser {
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ListUsersResult {
+  users: AuthUserRecord[]
+  total: number
+}
+
 export interface TokenPair {
   accessToken: string
   refreshToken: string
@@ -642,6 +652,76 @@ export class AuthService {
       )
       .get(normalized) as UserRow | undefined
     return user ? toAuthUser(user) : null
+  }
+
+  /**
+   * Paginated account list for operator surfaces. Never includes password
+   * hashes or session tokens.
+   */
+  async listUsers(options: { limit?: number; offset?: number } = {}): Promise<ListUsersResult> {
+    const limit = options.limit ?? 50
+    const offset = options.offset ?? 0
+
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      throw badRequest('limit must be an integer between 1 and 200')
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw badRequest('offset must be a non-negative integer')
+    }
+
+    const total = (
+      this.db.prepare(`SELECT COUNT(*) AS n FROM "${AUTH_TABLES.users}"`).get() as { n: number }
+    ).n
+
+    const rows = this.db
+      .prepare(
+        `SELECT "id", "email", "role", "email_verified", "created_at", "updated_at"
+         FROM "${AUTH_TABLES.users}"
+         ORDER BY "created_at" DESC, "id" DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset) as Array<{
+      id: string
+      email: string
+      role: AuthRole
+      email_verified: number
+      created_at: string
+      updated_at: string
+    }>
+
+    return {
+      total,
+      users: rows.map((row) => ({
+        ...toAuthUser(row),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    }
+  }
+
+  /**
+   * Deletes an account and everything attached to it (sessions, tokens,
+   * resets, verification links and admin sessions) via foreign-key cascades.
+   */
+  async deleteUser(email: string): Promise<AuthUser> {
+    const normalized = normalizeEmail(email)
+    const row = this.db
+      .prepare(
+        `SELECT "id", "email", "role", "email_verified" FROM "${AUTH_TABLES.users}" WHERE "email" = ?`,
+      )
+      .get(normalized) as {
+      id: string
+      email: string
+      role: AuthRole
+      email_verified: number
+    } | undefined
+    if (!row) throw notFound('No account with that email')
+
+    transaction(this.db, () => {
+      this.db.prepare(`DELETE FROM "${AUTH_TABLES.users}" WHERE "id" = ?`).run(row.id)
+    })
+
+    return toAuthUser(row)
   }
 
   async login(input: Credentials, meta: RequestMeta): Promise<AuthSessionResult> {

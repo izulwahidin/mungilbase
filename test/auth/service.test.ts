@@ -268,3 +268,29 @@ describe('logout', () => {
     expect(service.resolveAccessToken(second.tokens.accessToken)).not.toBeNull()
   })
 })
+
+describe('operator account management', () => {
+  it('lists accounts without secrets and deletes their sessions', async () => {
+    await registered()
+
+    const listed = await service.listUsers()
+    expect(listed.total).toBe(1)
+    expect(listed.users[0]).toMatchObject({ email, role: 'user', emailVerified: false })
+    expect(JSON.stringify(listed)).not.toContain('password')
+
+    const sessions = db
+      .prepare(`SELECT COUNT(*) AS n FROM "_mungil_auth_sessions"`)
+      .get() as { n: number }
+    expect(sessions.n).toBeGreaterThan(0)
+
+    await service.deleteUser(email)
+    expect(await service.findUserByEmail(email)).toBeNull()
+
+    const after = db
+      .prepare(`SELECT COUNT(*) AS n FROM "_mungil_auth_sessions"`)
+      .get() as { n: number }
+    expect(after.n).toBe(0)
+
+    await expect(service.deleteUser(email)).rejects.toMatchObject({ code: 'not_found' })
+  })
+})

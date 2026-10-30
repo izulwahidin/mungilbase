@@ -40,7 +40,8 @@ test, or marked as planned.
    path; the app writes only the database and uploads.
 5. **MCP client → application.** Tool arguments are untrusted and come from an
    AI agent. The identity is chosen by the operator at process start; the agent
-   cannot select or escalate it.
+   cannot select or escalate it. Admin and raw-SQL tools require explicit
+   operator flags and an admin identity.
 6. **Operator → secrets.** Secrets arrive from environment variables, never
    from the config file.
 
@@ -124,7 +125,9 @@ launch; **out** = deliberately not handled.
 | Implicit admin bypass | done | `auth.adminBypassRules` defaults to false; promotion alone never disables rules |
 | Admin actions unaudited | done | `auth.admin_login`, `auth.admin_logout`, `admin.create`, `admin.update`, `admin.delete` are written to `_mungil_audit` |
 | Admin panel cookie theft | partial | HttpOnly + `SameSite=Lax`, `Secure` when `appUrl` is HTTPS, 8-hour lifetime, revocable; no device binding |
-| MCP agent exceeds operator intent | done | Mutating tools are only registered with `--allow-write`; `--tables` narrows the surface; identity comes from an existing account, never from tool arguments; rules run in SQLite and writes are audited |
+| MCP agent exceeds operator intent | done | Data writes need `--allow-write`; admin tools need `--admin` plus an admin identity; `--tables` narrows the surface; identity never comes from tool arguments; rules run in SQLite and writes are audited |
+| MCP raw SQL bypasses rules | accepted | Only with `--admin --allow-raw-sql`; `query_sql` is read-only and row-capped, `execute_sql` is arbitrary, and both are audited. The operator explicitly accepts this risk |
+| MCP-created password exposed in transcript | partial | Generated passwords are returned once to the caller and are therefore visible to the MCP client. Pass an explicit password or reset it after onboarding |
 | Extension/config escape hatch | out | There is no plugin system in v0.1, by design |
 
 ## Out of scope for v0.1

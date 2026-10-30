@@ -41,6 +41,8 @@ interface ParsedArgs {
   json: boolean
   apply: boolean
   allowWrite: boolean
+  admin: boolean
+  allowRawSql: boolean
   help: boolean
   version: boolean
 }
@@ -197,6 +199,8 @@ async function dispatch(
         configPath: parsed.config,
         user: parsed.user,
         allowWrite: parsed.allowWrite,
+        admin: parsed.admin,
+        allowRawSql: parsed.allowRawSql,
         tables: parsed.tables,
         version: VERSION,
       })
@@ -313,6 +317,8 @@ function parseArgs(argv: string[]): ParsedArgs {
     json: false,
     apply: false,
     allowWrite: false,
+    admin: false,
+    allowRawSql: false,
     help: false,
     version: false,
   }
@@ -347,6 +353,14 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     if (arg === '--allow-write') {
       parsed.allowWrite = true
+      continue
+    }
+    if (arg === '--admin') {
+      parsed.admin = true
+      continue
+    }
+    if (arg === '--allow-raw-sql' || arg === '--allow-sql') {
+      parsed.allowRawSql = true
       continue
     }
 
@@ -459,6 +473,9 @@ Options
       --user <email>    mcp: evaluate rules as this account (default: anonymous)
       --tables <a,b>    mcp: expose only these tables
       --allow-write     mcp: register create/update/delete tools
+      --admin           mcp: register schema, user, backup, audit tools
+                        (requires --user with an admin account)
+      --allow-raw-sql   mcp: expose query_sql and execute_sql (requires --admin)
       --password-env <name>
                         Read the password from this env var
       --json            init: write mungil.config.json instead of .ts
@@ -473,6 +490,7 @@ Examples
   MUNGIL_USER_PASSWORD='correct horse battery' npx mungilbase user create me@example.com
   npx mungilbase start --port 8787
   npx mungilbase mcp --user me@example.com --allow-write
+  npx mungilbase mcp --user admin@example.com --admin --allow-raw-sql
   npx mungilbase sdk ./src/lib/mungil.ts
 `
 }

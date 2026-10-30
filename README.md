@@ -7,7 +7,7 @@ authentication, row-level rules, migrations, and an MCP server for AI agents.
 Ships as an npm package and a typed library; runs as a single Node process with
 SQLite.
 
-> **Status: v0.5.0 (pre-1.0).** Feature-complete for a single-node self-hosted
+> **Status: v0.6.0 (pre-1.0).** Feature-complete for a single-node self-hosted
 > deployment, but it has not been through an external security audit or a
 > production load test. Read [What works today](#what-works-today) and the
 > [production gate](#production-gate) before relying on it.
@@ -299,9 +299,16 @@ npx mungilbase mcp --user agent@example.com --tables notes,posts
 
 # add create_row / update_row / delete_row
 npx mungilbase mcp --user agent@example.com --allow-write
+
+# Supabase-style admin tools: migrations, users, backups, audit
+npx mungilbase mcp --user admin@example.com --admin
+
+# plus query_sql and execute_sql (bypasses table rules; audited)
+npx mungilbase mcp --user admin@example.com --admin --allow-raw-sql
 ```
 
-File uploads, raw SQL, config changes and user management are not exposed.
+Admin mode requires an account whose role is `admin`; an agent cannot promote
+itself. File uploads and config-file editing are still not exposed.
 See [docs/mcp.md](docs/mcp.md) for Claude Desktop, Cursor and generic client
 configuration, the security model, and programmatic use.
 
@@ -438,7 +445,8 @@ anonymous requests rather than an empty result.
 - [x] `npx mungilbase` CLI (`init`, `start`, `migrate`, `doctor`, `openapi`,
       `sdk`, `backup`, `files gc`, `mcp`, user management) and a typed library export
 - [x] MCP server for AI agents (stdio), rules-enforced, read-only by default,
-      with optional identity, table allowlist and write tools
+      with optional identity/table allowlist/write tools and Supabase-style
+      admin tools (migrations, users, backups, audit) plus opt-in raw SQL
 - [x] GitHub Actions CI, npm release workflow, threat model, runbook
 
 ## Not built yet
@@ -449,7 +457,7 @@ anonymous requests rather than an empty result.
 
 ## Production gate
 
-Every code-level requirement is met as of **v0.5.0**:
+Every code-level requirement is met as of **v0.6.0**:
 
 - [x] Argon2id password hashing (versioned PHC strings)
 - [x] DB-backed sessions, refresh rotation with reuse detection, revocable

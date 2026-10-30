@@ -10,6 +10,7 @@ import { createRow, deleteRow, listRows, updateRow, viewRow } from '../tables/cr
 import { AppError, badRequest } from '../http/errors.js'
 import { buildOpenApi } from '../openapi/spec.js'
 import { recordAudit } from '../audit/log.js'
+import { registerAdminTools } from './admin.js'
 import { VERSION } from '../version.js'
 
 export interface McpIdentity {
@@ -29,8 +30,16 @@ export interface CreateMcpServerOptions {
   auth: AuthContext
   /** Register create/update/delete tools. Default false. */
   allowWrite?: boolean
+  /** Register operator tools (schema, users, backups, audit). Requires an admin identity. */
+  allowAdmin?: boolean
+  /** Register query_sql/execute_sql. Requires allowAdmin. */
+  allowRawSql?: boolean
   /** Restrict every tool and resource to these tables. Default: all. */
   tables?: readonly string[]
+  /** Config path shown by get_config. */
+  configPath?: string
+  /** Database path shown by database_info and used for backups. */
+  dbFile?: string
   version?: string
 }
 
@@ -40,6 +49,8 @@ export interface McpInfo {
   identity: McpIdentity | null
   auth: AuthContext
   writeEnabled: boolean
+  adminEnabled: boolean
+  rawSqlEnabled: boolean
   tables: string[]
 }
 
@@ -61,6 +72,16 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
   const tableNames = resolveTables(registry, options.tables)
   const tableSet = new Set(tableNames)
   const allowWrite = options.allowWrite ?? false
+  const allowAdmin = options.allowAdmin ?? false
+  const allowRawSql = options.allowRawSql ?? false
+
+  if (allowAdmin && (!identity || identity.role !== 'admin')) {
+    throw new Error('Admin MCP tools require an identity with the admin role.')
+  }
+  if (allowRawSql && !allowAdmin) {
+    throw new Error('Raw SQL tools require admin mode.')
+  }
+
   const publicConfig: MungilConfig = {
     ...config,
     tables: config.tables.filter((table) => tableSet.has(table.name)),
@@ -86,6 +107,8 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
     identity,
     auth,
     writeEnabled: allowWrite,
+    adminEnabled: allowAdmin,
+    rawSqlEnabled: allowRawSql,
     tables: tableNames,
   })
 
@@ -322,6 +345,19 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
         })
       },
     )
+  }
+
+  if (allowAdmin) {
+    registerAdminTools(server, {
+      config,
+      registry,
+      db,
+      identity,
+      configPath: options.configPath ?? null,
+      dbFile: options.dbFile ?? config.database.file,
+      version,
+      allowRawSql,
+    })
   }
 
   return server
